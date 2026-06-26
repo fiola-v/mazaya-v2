@@ -38,14 +38,20 @@ export type VisitStatus = 'Visited' | 'Closed Wrong Location' | 'Moved' | 'Not H
 export type InterestLevel = 'Interested' | 'Neutral' | 'Unclear' | 'Not Interested';
 export type DecisionMakerStatus = 'Decision Maker' | 'Not Decision Maker' | 'Influencer' | 'Unknown';
 export type FollowUpResult =
-  | 'Positive'
-  | 'Neutral'
-  | 'No Answer'
-  | 'Need to Call Again'
-  | 'Need to Schedule a Meeting'
-  | 'Schedule a Meeting'
-  | 'Meeting Scheduled'
-  | 'Rejected';
+  | 'No reply'
+  | 'Interested'
+  | 'Meeting scheduled'
+  | 'Onboarding requested'
+  | 'Need decision maker'
+  | 'Need finance approval'
+  | 'Waiting for next update'
+  | 'Not interested';
+export type FollowUpNextStep =
+  | 'Follow up later'
+  | 'Schedule meeting'
+  | 'Schedule onboarding'
+  | 'Send information/deck'
+  | 'No next action';
 export type NextStep =
   | 'Call'
   | 'Send More Info'
@@ -136,7 +142,7 @@ export interface FollowUpRow {
   follow_up_date: string;
   follow_up_status: string;
   follow_up_result: FollowUpResult | null;
-  next_step: NextStep | null;
+  next_step: FollowUpNextStep | null;
   next_action_date: string | null;
   current_pipeline_status: CompanyPipelineStatus | string | null;
   follow_up_note: string | null;

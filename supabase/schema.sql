@@ -191,26 +191,24 @@ create table if not exists follow_ups (
   constraint follow_ups_follow_up_result_check check (
     follow_up_result is null
     or follow_up_result in (
-      'Positive',
-      'Neutral',
-      'No Answer',
-      'Need to Call Again',
-      'Need to Schedule a Meeting',
-      'Schedule a Meeting',
-      'Meeting Scheduled',
-      'Rejected'
+      'No reply',
+      'Interested',
+      'Meeting scheduled',
+      'Onboarding requested',
+      'Need decision maker',
+      'Need finance approval',
+      'Waiting for next update',
+      'Not interested'
     )
   ),
   constraint follow_ups_next_step_check check (
     next_step is null
     or next_step in (
-      'Call',
-      'Send More Info',
-      'Schedule Meeting',
-      'Schedule Onboarding',
-      'Wait for Client Reply',
-      'Follow Up Later',
-      'No Further Action'
+      'Follow up later',
+      'Schedule meeting',
+      'Schedule onboarding',
+      'Send information/deck',
+      'No next action'
     )
   )
 );

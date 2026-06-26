@@ -5,6 +5,7 @@ import { getSessionKey, startCommandCenterSession } from './session';
 import { CommandCenterAction } from '../types/mazaya';
 import { handleFieldVisitText, registerFieldVisitWorkflow } from '../modules/fieldVisits/newCompanyVisitWorkflow';
 import { handleCompanyLookupText, registerCompanyLookupWorkflow } from '../modules/companies/companyLookupWorkflow';
+import { handleFollowUpLoggingText, registerFollowUpLoggingWorkflow } from '../modules/followUps/followUpLoggingWorkflow';
 
 const commandCenterActions = new Set<CommandCenterAction>([
   'field_visit',
@@ -42,6 +43,7 @@ export function createBot(): Telegraf {
 
   registerFieldVisitWorkflow(bot);
   registerCompanyLookupWorkflow(bot);
+  registerFollowUpLoggingWorkflow(bot);
 
   bot.action(/^cc:([a-z_]+)$/, async (ctx) => {
     const action = ctx.match[1] as CommandCenterAction;
@@ -57,6 +59,10 @@ export function createBot(): Telegraf {
 
   bot.on('text', async (ctx) => {
     if (ctx.message && 'text' in ctx.message && ctx.message.text.startsWith('/')) {
+      return;
+    }
+
+    if (await handleFollowUpLoggingText(ctx)) {
       return;
     }
 
