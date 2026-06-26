@@ -41,6 +41,7 @@ type WhitespaceText = string;
 
 interface NewCompanyVisitState {
   step: VisitStep;
+  status?: 'open' | 'saved';
   companyName?: string;
   industry?: string | null;
   contactName?: string;
@@ -81,6 +82,10 @@ function setState(ctx: Context, state: NewCompanyVisitState): void {
 
 function clearState(ctx: Context): void {
   sessions.delete(getWorkflowKey(ctx));
+}
+
+function isSavedState(state?: NewCompanyVisitState): state is NewCompanyVisitState & { status: 'saved'; saved: NonNullable<NewCompanyVisitState['saved']> } {
+  return Boolean(state && state.status === 'saved' && state.saved);
 }
 
 function normalizeOptionalText(value: string): string | null {
@@ -323,6 +328,16 @@ async function showPreview(ctx: Context, state: NewCompanyVisitState) {
   );
 }
 
+async function stripPreviewButtons(ctx: Context): Promise<void> {
+  try {
+    await ctx.editMessageReplyMarkup({
+      inline_keyboard: [],
+    });
+  } catch {
+    // Best effort only.
+  }
+}
+
 function mapVisitStatus(action: string): VisitStatus | null {
   switch (action) {
     case 'visited':
@@ -538,6 +553,7 @@ async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
 
 async function showPostSaveSyncPrompt(ctx: Context, state: NewCompanyVisitState) {
   state.step = 'awaiting_sync_choice';
+  state.status = 'saved';
   setState(ctx, state);
 
   await ctx.reply(
@@ -554,7 +570,7 @@ async function handleSavedSyncChoice(ctx: Context, choice: 'sync_now' | 'sync_la
 
   await ctx.answerCbQuery().catch(() => undefined);
 
-  if (!state?.saved) {
+  if (!isSavedState(state)) {
     clearState(ctx);
     await ctx.reply('This saved visit session is no longer available.');
     return;
@@ -584,9 +600,18 @@ async function handleSaveConfirm(ctx: Context) {
     return;
   }
 
+  if (isSavedState(state)) {
+    await stripPreviewButtons(ctx);
+    await ctx.reply('This visit was already saved. Open Command Center to start a new action.');
+    return;
+  }
+
   try {
     const saved = await saveNewCompanyVisit(ctx, state);
     state.saved = saved;
+    state.status = 'saved';
+    setState(ctx, state);
+    await stripPreviewButtons(ctx);
     await ctx.reply(
       [
         '✅ New Company Visit saved.',
@@ -646,11 +671,23 @@ export function registerFieldVisitWorkflow(bot: Telegraf): void {
 
   bot.action('field_visit:new:edit', async (ctx) => {
     await ctx.answerCbQuery().catch(() => undefined);
+    const state = getState(ctx);
+    if (isSavedState(state)) {
+      await stripPreviewButtons(ctx);
+      await ctx.reply('This visit was already saved. Open Command Center to start a new action.');
+      return;
+    }
     await restartFlow(ctx);
   });
 
   bot.action('field_visit:new:cancel', async (ctx) => {
     await ctx.answerCbQuery().catch(() => undefined);
+    const state = getState(ctx);
+    if (isSavedState(state)) {
+      await stripPreviewButtons(ctx);
+      await ctx.reply('This visit was already saved. Open Command Center to start a new action.');
+      return;
+    }
     clearState(ctx);
     await ctx.reply('New Company Visit cancelled.');
     await showFieldVisitMenu(ctx);
