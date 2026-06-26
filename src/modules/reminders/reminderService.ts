@@ -51,6 +51,22 @@ export async function listOpenReminders(): Promise<ReminderRow[]> {
   return (data ?? []) as ReminderRow[];
 }
 
+export async function listRemindersByCompany(companyId: string): Promise<ReminderRow[]> {
+  const { data, error } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('due_date', { ascending: true })
+    .order('due_time', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throwSupabaseError('listRemindersByCompany', error);
+  }
+
+  return (data ?? []) as ReminderRow[];
+}
+
 export async function rescheduleReminder(reminderId: string, input: ReminderRescheduleInput): Promise<ReminderRow> {
   const { data, error } = await supabase
     .from('reminders')

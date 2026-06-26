@@ -159,6 +159,16 @@ export async function findCompaniesByName(companyName: string): Promise<CompanyR
   return (data ?? []) as CompanyRow[];
 }
 
+export async function getCompanyByCode(companyCode: string): Promise<CompanyRow | null> {
+  const { data, error } = await supabase.from('companies').select('*').eq('company_code', companyCode).maybeSingle();
+
+  if (error) {
+    throwSupabaseError('getCompanyByCode', error);
+  }
+
+  return (data as CompanyRow | null) ?? null;
+}
+
 export async function getCompanyById(companyId: string): Promise<CompanyRow | null> {
   const { data, error } = await supabase.from('companies').select('*').eq('id', companyId).maybeSingle();
 
