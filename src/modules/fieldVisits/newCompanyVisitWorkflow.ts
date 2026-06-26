@@ -3,7 +3,7 @@ import { getSessionKey, clearSession } from '../../bot/session';
 import { showCommandCenter } from '../../bot/commandCenter';
 import { addDays, isDateOnly, toDateOnly } from '../../utils/dates';
 import { buildWhatsAppLink, digitsOnly } from '../../utils/phone';
-import { createCompany } from '../companies/companyService';
+import { createCompanyWithReportCardId, generateNextReportCardId } from '../companies/companyService';
 import { createCompanyContact, setMainContact } from '../contacts/contactService';
 import { createFieldVisit } from './fieldVisitService';
 import { createReminder } from '../reminders/reminderService';
@@ -43,6 +43,7 @@ interface NewCompanyVisitState {
   step: VisitStep;
   status?: 'open' | 'saved';
   companyName?: string;
+  companyCode?: string;
   industry?: string | null;
   contactName?: string;
   contactRole?: string | null;
@@ -183,6 +184,7 @@ function buildPreviewMessage(state: NewCompanyVisitState): string {
     'New Company Visit Preview',
     '',
     `Company name: ${state.companyName || 'Not captured'}`,
+    `Report Card ID: ${state.companyCode || 'Not captured'}`,
     `Industry: ${state.industry || 'Not captured'}`,
     `Contact name: ${state.contactName || 'Not captured'}`,
     `Contact role: ${state.contactRole || 'Not captured'}`,
@@ -315,6 +317,10 @@ async function askVisitNote(ctx: Context, state: NewCompanyVisitState) {
 }
 
 async function showPreview(ctx: Context, state: NewCompanyVisitState) {
+  if (!state.companyCode) {
+    state.companyCode = await generateNextReportCardId();
+  }
+
   state.step = 'preview';
   setState(ctx, state);
 
@@ -437,8 +443,8 @@ function buildNextActionDate(choice: 'today' | 'tomorrow' | 'next_week' | 'custo
 async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
   if (
     !state.companyName ||
+    !state.companyCode ||
     !state.contactName ||
-    !state.phone ||
     !state.visitStatus ||
     !state.decisionMakerStatus ||
     state.infoSent === undefined
@@ -446,7 +452,8 @@ async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
     throw new Error('New Company Visit is missing required fields.');
   }
 
-  const company = await createCompany({
+  const company = await createCompanyWithReportCardId({
+    company_code: state.companyCode,
     company_name: state.companyName,
     industry: state.industry ?? undefined,
     visit_status: state.visitStatus,
@@ -461,8 +468,8 @@ async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
     company_id: company.id,
     contact_name: state.contactName,
     role_title: state.contactRole ?? undefined,
-    phone: state.phone,
-    whatsapp: state.whatsapp ?? buildWhatsAppLink(state.phone) ?? null,
+    phone: state.phone ?? null,
+    whatsapp: state.whatsapp ?? (state.phone ? buildWhatsAppLink(state.phone) : null),
     email: state.email ?? null,
     decision_maker_status: state.decisionMakerStatus,
     is_main_contact: true,
@@ -470,6 +477,7 @@ async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
   });
 
   await setMainContact(company.id, contact.id);
+  state.companyCode = company.company_code ?? state.companyCode;
 
   const fieldVisit = await createFieldVisit({
     company_id: company.id,
@@ -614,12 +622,14 @@ async function handleSaveConfirm(ctx: Context) {
     await stripPreviewButtons(ctx);
     await ctx.reply(
       [
-        '✅ New Company Visit saved.',
+        'New Company Visit saved.',
         '',
-        `Company ID: ${saved.companyId}`,
-        `Contact ID: ${saved.contactId}`,
-        `Field Visit ID: ${saved.fieldVisitId}`,
-        saved.reminderId ? `Reminder ID: ${saved.reminderId}` : 'Reminder: not created',
+        `Company: ${state.companyName || 'Not captured'}`,
+        `Report Card ID: ${state.companyCode || 'Not captured'}`,
+        `Contact: ${state.contactName || 'Not captured'}`,
+        `Next action: ${state.nextAction || 'Not captured'}`,
+        `Next action date: ${state.nextActionDate || 'Not captured'}`,
+        `Reminder: ${saved.reminderId ? 'Created' : 'Not created'}`,
       ].join('\n')
     );
     await showPostSaveSyncPrompt(ctx, state);
@@ -890,9 +900,11 @@ export async function handleFieldVisitText(ctx: Context): Promise<boolean> {
   }
 
   if (state.step === 'phone') {
-    const text = normalizeRequiredText(rawText);
+    const text = normalizeOptionalText(rawText);
     if (!text) {
-      await ctx.reply('Please enter a phone number.');
+      state.phone = undefined;
+      state.whatsapp = null;
+      await askEmail(ctx, state);
       return true;
     }
 
