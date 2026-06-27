@@ -83,11 +83,11 @@ function pickOpenReminders(reminders: ReminderRow[]): ReminderRow[] {
 
 function formatOpenReminders(reminders: ReminderRow[]): string[] {
   if (reminders.length === 0) {
-    return ['Open reminders:', 'Not available'];
+    return ['Open reminders', 'Not available'];
   }
 
   return [
-    'Open reminders:',
+    'Open reminders',
     '',
     ...reminders.flatMap((reminder, index) => [
       `${index + 1}. ${reminder.action}`,
@@ -100,11 +100,11 @@ function formatOpenReminders(reminders: ReminderRow[]): string[] {
 
 function formatLatestFollowUps(followUps: FollowUpRow[]): string[] {
   if (followUps.length === 0) {
-    return ['Latest follow-ups:', 'Not available'];
+    return ['Latest follow-ups', 'Not available'];
   }
 
   return [
-    'Latest follow-ups:',
+    'Latest follow-ups',
     '',
     ...followUps.flatMap((followUp, index) => [
       `${index + 1}. ${followUp.follow_up_date} - ${valueOrFallback(followUp.follow_up_result)}`,
@@ -113,6 +113,18 @@ function formatLatestFollowUps(followUps: FollowUpRow[]): string[] {
       '',
     ]),
   ];
+}
+
+function lastVisitedDate(latestVisit: FieldVisitRow | null): string {
+  if (!latestVisit) {
+    return 'Not captured';
+  }
+
+  if (latestVisit.visit_date) {
+    return latestVisit.visit_date;
+  }
+
+  return latestVisit.created_at.slice(0, 10);
 }
 
 function formatCompanyReportCard(
@@ -125,18 +137,26 @@ function formatCompanyReportCard(
   return [
     'Company Report Card',
     '',
-    `Company name: ${company.company_name}`,
+    'Company',
+    `Name: ${company.company_name}`,
     `Report Card ID: ${valueOrFallback(company.company_code)}`,
     `Industry: ${valueOrFallback(company.industry)}`,
+    '',
+    'Contact',
     `Main contact: ${valueOrFallback(mainContact?.contact_name)}`,
+    `Role: ${valueOrFallback(mainContact?.role_title)}`,
     `Phone: ${valueOrFallback(mainContact?.phone)}`,
     `WhatsApp: ${valueOrFallback(mainContact?.whatsapp)}`,
     `Email: ${valueOrFallback(mainContact?.email)}`,
+    '',
+    'Status',
     `Latest visit status: ${valueOrFallback(latestVisit?.visit_status ?? company.visit_status)}`,
-    `Decision maker status: ${valueOrFallback(latestVisit?.decision_maker_status ?? mainContact?.decision_maker_status)}`,
+    `Last visited: ${lastVisitedDate(latestVisit)}`,
     `Interest level: ${valueOrFallback(latestVisit?.interest_level ?? company.interest_level)}`,
-    `Next action: ${valueOrFallback(company.current_next_action ?? latestVisit?.next_step)}`,
-    `Next action date: ${valueOrFallback(company.next_action_date ?? latestVisit?.next_action_date)}`,
+    '',
+    'Next action',
+    `Action: ${valueOrFallback(company.current_next_action ?? latestVisit?.next_step)}`,
+    `Date: ${valueOrFallback(company.next_action_date ?? latestVisit?.next_action_date)}`,
     '',
     ...formatOpenReminders(openReminders),
     '',

@@ -209,15 +209,22 @@ function buildPreviewMessage(state: RevisitState): string {
   return [
     'Existing Company Revisit Preview',
     '',
-    `Company: ${valueOrFallback(state.company?.company_name)}`,
+    'Company',
+    `Name: ${valueOrFallback(state.company?.company_name)}`,
     `Report Card ID: ${valueOrFallback(state.company?.company_code)}`,
+    '',
+    'Contact',
     `Main contact: ${valueOrFallback(state.mainContact?.contact_name)}`,
+    '',
+    'Status',
     `Visit status: ${valueOrFallback(state.visitStatus)}`,
     `Interest level: ${valueOrFallback(state.interestLevel)}`,
+    '',
+    'Next action',
     `Visit notes: ${valueOrFallback(state.visitNote)}`,
-    `Next step: ${valueOrFallback(state.nextStep)}`,
-    `Next action date: ${valueOrFallback(state.nextActionDate)}`,
-    `Next action time: ${valueOrFallback(state.nextActionTime)}`,
+    `Action: ${valueOrFallback(state.nextStep)}`,
+    `Date: ${valueOrFallback(state.nextActionDate)}`,
+    `Time: ${valueOrFallback(state.nextActionTime)}`,
     `Reminder: ${reminderPreview}`,
   ].join('\n');
 }
@@ -348,7 +355,7 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
   }
 
   const company = state.company as CompanyRow;
-  await createFieldVisit({
+  const savedVisit = await createFieldVisit({
     company_id: company.id,
     contact_id: state.mainContact?.id ?? null,
     visit_date: toDateOnly(new Date()),
@@ -381,18 +388,20 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
     if (existingReminder) {
       reminderResult = 'Already open';
     } else {
-    await createReminder({
-      company_id: company.id,
-      contact_id: state.mainContact?.id ?? null,
-      reminder_type: 'follow_up',
-      action: state.nextStep,
-      due_date: state.nextActionDate,
-      due_time: state.nextActionTime ?? null,
-      created_by: ctx.from?.username || ctx.from?.id?.toString() || null,
-    });
+      await createReminder({
+        company_id: company.id,
+        contact_id: state.mainContact?.id ?? null,
+        reminder_type: 'follow_up',
+        action: state.nextStep,
+        due_date: state.nextActionDate,
+        due_time: state.nextActionTime ?? null,
+        created_by: ctx.from?.username || ctx.from?.id?.toString() || null,
+      });
       reminderResult = 'Created';
     }
   }
+
+  const lastVisited = savedVisit.visit_date || savedVisit.created_at.slice(0, 10);
 
   await ctx.reply(
     [
@@ -400,6 +409,7 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
       '',
       `Company: ${company.company_name}`,
       `Report Card ID: ${valueOrFallback(company.company_code)}`,
+      `Last visited: ${lastVisited}`,
       `Reminder: ${reminderResult}`,
     ].join('\n')
   );

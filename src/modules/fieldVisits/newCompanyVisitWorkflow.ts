@@ -11,7 +11,6 @@ import { createReminder } from '../reminders/reminderService';
 import { queueReportSync } from '../reports/reportQueueService';
 import { logActivity } from '../activity/activityLogService';
 import {
-  DecisionMakerStatus,
   InterestLevel,
   NextStep,
   VisitStatus,
@@ -27,7 +26,6 @@ type VisitStep =
   | 'whatsapp_value'
   | 'email'
   | 'visit_status'
-  | 'decision_maker_status'
   | 'interest_level'
   | 'blocker'
   | 'info_sent'
@@ -52,7 +50,6 @@ interface NewCompanyVisitState {
   whatsapp?: string | null;
   email?: string | null;
   visitStatus?: VisitStatus;
-  decisionMakerStatus?: DecisionMakerStatus;
   interestLevel?: InterestLevel;
   blocker?: string | null;
   infoSent?: boolean;
@@ -128,15 +125,6 @@ function buildVisitStatusKeyboard() {
   ]);
 }
 
-function buildDecisionMakerKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('Decision Maker', 'field_visit:new:decision_maker:decision_maker')],
-    [Markup.button.callback('Not Decision Maker', 'field_visit:new:decision_maker:not_decision_maker')],
-    [Markup.button.callback('Influencer', 'field_visit:new:decision_maker:influencer')],
-    [Markup.button.callback('Unknown', 'field_visit:new:decision_maker:unknown')],
-  ]);
-}
-
 function buildInterestLevelKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('Interested', 'field_visit:new:interest:interested')],
@@ -181,21 +169,29 @@ function buildPreviewMessage(state: NewCompanyVisitState): string {
   return [
     'New Company Visit Preview',
     '',
-    `Company name: ${state.companyName || 'Not captured'}`,
+    'Company',
+    `Name: ${state.companyName || 'Not captured'}`,
     `Report Card ID: ${state.companyCode || 'Not captured'}`,
     `Industry: ${state.industry || 'Not captured'}`,
-    `Contact name: ${state.contactName || 'Not captured'}`,
-    `Contact role: ${state.contactRole || 'Not captured'}`,
+    '',
+    'Contact',
+    `Main contact: ${state.contactName || 'Not captured'}`,
+    `Role: ${state.contactRole || 'Not captured'}`,
     `Phone: ${state.phone || 'Not captured'}`,
     `WhatsApp: ${state.whatsapp || 'Not captured'}`,
     `Email: ${state.email || 'Not captured'}`,
+    '',
+    'Status',
     `Visit status: ${state.visitStatus || 'Not captured'}`,
-    `Decision maker status: ${state.decisionMakerStatus || 'Not captured'}`,
     `Interest level: ${state.interestLevel || 'Not captured'}`,
     `Blocker: ${state.blocker || 'Not captured'}`,
     `Info sent: ${infoSent}`,
+    '',
+    'Next action',
     `Next action: ${state.nextAction || 'Not captured'}`,
-    `Next action date: ${state.nextActionDate || 'Not captured'}`,
+    `Date: ${state.nextActionDate || 'Not captured'}`,
+    '',
+    'Notes',
     `Visit note: ${state.visitNote || 'Not captured'}`,
   ].join('\n');
 }
@@ -226,7 +222,7 @@ async function askContactName(ctx: Context, state: NewCompanyVisitState) {
 async function askContactRole(ctx: Context, state: NewCompanyVisitState) {
   state.step = 'contact_role';
   setState(ctx, state);
-  await ctx.reply('What is the contact role or title?\n\nYou can type skip if you do not know it.');
+  await ctx.reply('What is this contact\'s role/title?\n\nYou can type it or send skip.');
 }
 
 async function askPhone(ctx: Context, state: NewCompanyVisitState) {
@@ -264,12 +260,6 @@ async function askVisitStatus(ctx: Context, state: NewCompanyVisitState) {
   state.step = 'visit_status';
   setState(ctx, state);
   await ctx.reply('Visit status?', buildVisitStatusKeyboard());
-}
-
-async function askDecisionMakerStatus(ctx: Context, state: NewCompanyVisitState) {
-  state.step = 'decision_maker_status';
-  setState(ctx, state);
-  await ctx.reply('Decision maker status?', buildDecisionMakerKeyboard());
 }
 
 async function askInterestLevel(ctx: Context, state: NewCompanyVisitState) {
@@ -359,21 +349,6 @@ function mapVisitStatus(action: string): VisitStatus | null {
   }
 }
 
-function mapDecisionMakerStatus(action: string): DecisionMakerStatus | null {
-  switch (action) {
-    case 'decision_maker':
-      return 'Decision Maker';
-    case 'not_decision_maker':
-      return 'Not Decision Maker';
-    case 'influencer':
-      return 'Influencer';
-    case 'unknown':
-      return 'Unknown';
-    default:
-      return null;
-  }
-}
-
 function mapInterestLevel(action: string): InterestLevel | null {
   switch (action) {
     case 'interested':
@@ -444,7 +419,6 @@ async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
     !state.companyCode ||
     !state.contactName ||
     !state.visitStatus ||
-    !state.decisionMakerStatus ||
     state.infoSent === undefined
   ) {
     throw new Error('New Company Visit is missing required fields.');
@@ -469,7 +443,7 @@ async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
     phone: state.phone ?? null,
     whatsapp: state.whatsapp ?? (state.phone ? buildWhatsAppLink(state.phone) : null),
     email: state.email ?? null,
-    decision_maker_status: state.decisionMakerStatus,
+    decision_maker_status: null,
     is_main_contact: true,
     notes: null,
   });
@@ -481,7 +455,7 @@ async function saveNewCompanyVisit(ctx: Context, state: NewCompanyVisitState) {
     company_id: company.id,
     contact_id: contact.id,
     visit_date: toDateOnly(new Date()),
-    decision_maker_status: state.decisionMakerStatus,
+    decision_maker_status: null,
     visit_status: state.visitStatus,
     interest_level: state.interestLevel,
     blocker: state.blocker ?? null,
@@ -747,22 +721,6 @@ export function registerFieldVisitWorkflow(bot: Telegraf): void {
     }
 
     state.visitStatus = visitStatus;
-    await askDecisionMakerStatus(ctx, state);
-  });
-
-  bot.action(/^field_visit:new:decision_maker:([a-z_]+)$/, async (ctx) => {
-    await ctx.answerCbQuery().catch(() => undefined);
-    const state = getState(ctx);
-    const match = ctx.match as RegExpMatchArray | undefined;
-    const action = match?.[1];
-    const decisionMakerStatus = action ? mapDecisionMakerStatus(action) : null;
-
-    if (!state || !decisionMakerStatus) {
-      await ctx.reply('Could not record the decision maker status. Please start again.');
-      return;
-    }
-
-    state.decisionMakerStatus = decisionMakerStatus;
     await askInterestLevel(ctx, state);
   });
 
