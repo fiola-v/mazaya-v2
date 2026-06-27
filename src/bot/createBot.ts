@@ -10,6 +10,7 @@ import {
 } from '../modules/fieldVisits/existingCompanyRevisitWorkflow';
 import { handleCompanyLookupText, registerCompanyLookupWorkflow } from '../modules/companies/companyLookupWorkflow';
 import { handleFollowUpLoggingText, registerFollowUpLoggingWorkflow } from '../modules/followUps/followUpLoggingWorkflow';
+import { handleDraftsText, registerDraftsWorkflow } from '../modules/drafts/draftsWorkflow';
 import { registerReminderListWorkflow } from '../modules/reminders/reminderListWorkflow';
 import { registerPlaceholderRoomsWorkflow } from './placeholderRoomsWorkflow';
 
@@ -54,6 +55,7 @@ export function createBot(): Telegraf {
   registerExistingCompanyRevisitWorkflow(bot);
   registerCompanyLookupWorkflow(bot);
   registerFollowUpLoggingWorkflow(bot);
+  registerDraftsWorkflow(bot);
   registerReminderListWorkflow(bot);
   registerPlaceholderRoomsWorkflow(bot);
 
@@ -75,6 +77,10 @@ export function createBot(): Telegraf {
     }
 
     if (await handleFollowUpLoggingText(ctx)) {
+      return;
+    }
+
+    if (await handleDraftsText(ctx)) {
       return;
     }
 

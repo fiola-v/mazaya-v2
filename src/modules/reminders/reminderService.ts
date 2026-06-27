@@ -244,3 +244,14 @@ export async function completeReminder(reminderId: string): Promise<ReminderRow>
 
   return data as ReminderRow;
 }
+
+// Narrow helper for Drafts undo path only.
+export async function deleteReminderById(reminderId: string): Promise<boolean> {
+  const { data, error } = await supabase.from('reminders').delete().eq('id', reminderId).select('id');
+
+  if (error) {
+    throwSupabaseError('deleteReminderById', error);
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
