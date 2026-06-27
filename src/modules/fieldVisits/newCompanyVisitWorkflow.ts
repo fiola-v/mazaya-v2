@@ -6,6 +6,7 @@ import { buildWhatsAppLink, digitsOnly } from '../../utils/phone';
 import { createCompanyWithReportCardId, generateNextReportCardId } from '../companies/companyService';
 import { createCompanyContact, setMainContact } from '../contacts/contactService';
 import { createFieldVisit } from './fieldVisitService';
+import { startExistingCompanyRevisitFromMenu } from './existingCompanyRevisitWorkflow';
 import { createReminder } from '../reminders/reminderService';
 import { queueReportSync } from '../reports/reportQueueService';
 import { logActivity } from '../activity/activityLogService';
@@ -659,8 +660,7 @@ export function registerFieldVisitWorkflow(bot: Telegraf): void {
 
   bot.action('field_visit:revisit_existing', async (ctx) => {
     await ctx.answerCbQuery().catch(() => undefined);
-    await ctx.reply('Existing company revisit flow is coming next.');
-    await showFieldVisitMenu(ctx);
+    await startExistingCompanyRevisitFromMenu(ctx);
   });
 
   bot.action('field_visit:quick_note', async (ctx) => {

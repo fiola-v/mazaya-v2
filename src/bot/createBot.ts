@@ -4,6 +4,10 @@ import { showCommandCenter, showComingSoon } from './commandCenter';
 import { getSessionKey, startCommandCenterSession } from './session';
 import { CommandCenterAction } from '../types/mazaya';
 import { handleFieldVisitText, registerFieldVisitWorkflow } from '../modules/fieldVisits/newCompanyVisitWorkflow';
+import {
+  handleExistingCompanyRevisitText,
+  registerExistingCompanyRevisitWorkflow,
+} from '../modules/fieldVisits/existingCompanyRevisitWorkflow';
 import { handleCompanyLookupText, registerCompanyLookupWorkflow } from '../modules/companies/companyLookupWorkflow';
 import { handleFollowUpLoggingText, registerFollowUpLoggingWorkflow } from '../modules/followUps/followUpLoggingWorkflow';
 import { registerReminderListWorkflow } from '../modules/reminders/reminderListWorkflow';
@@ -47,6 +51,7 @@ export function createBot(): Telegraf {
   });
 
   registerFieldVisitWorkflow(bot);
+  registerExistingCompanyRevisitWorkflow(bot);
   registerCompanyLookupWorkflow(bot);
   registerFollowUpLoggingWorkflow(bot);
   registerReminderListWorkflow(bot);
@@ -70,6 +75,10 @@ export function createBot(): Telegraf {
     }
 
     if (await handleFollowUpLoggingText(ctx)) {
+      return;
+    }
+
+    if (await handleExistingCompanyRevisitText(ctx)) {
       return;
     }
 

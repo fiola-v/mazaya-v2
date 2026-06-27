@@ -29,6 +29,10 @@ function getLookupKey(ctx: Context): string {
   return getSessionKey(ctx.chat?.id ?? 'unknown-chat', ctx.from?.id ?? 'unknown-user');
 }
 
+export function clearCompanyLookupState(ctx: Context): void {
+  lookupSessions.delete(getLookupKey(ctx));
+}
+
 function valueOrFallback(value: string | null | undefined): string {
   return value || 'Not captured';
 }
