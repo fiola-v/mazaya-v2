@@ -4,7 +4,6 @@ import { isDateOnly, toDateOnly } from '../../utils/dates';
 import {
   CompanyRow,
   CompanyContactRow,
-  DecisionMakerStatus,
   FollowUpNextStep,
   InterestLevel,
   NextStep,
@@ -13,14 +12,13 @@ import {
 import { findCompaniesByName, getCompanyByCode, getCompanyById, updateCompanyCurrentState } from '../companies/companyService';
 import { getMainContactForCompany } from '../contacts/contactService';
 import { createFieldVisit } from './fieldVisitService';
-import { createOrUpdateCompanyReminder } from '../reminders/reminderService';
+import { createReminder } from '../reminders/reminderService';
 import { clearCompanyLookupState } from '../companies/companyLookupWorkflow';
 
 type RevisitStep =
   | 'company_query'
   | 'company_choice'
   | 'visit_status'
-  | 'decision_maker_status'
   | 'interest_level'
   | 'visit_note'
   | 'next_step'
@@ -33,7 +31,6 @@ interface RevisitState {
   company?: CompanyRow;
   mainContact?: CompanyContactRow | null;
   visitStatus?: VisitStatus;
-  decisionMakerStatus?: DecisionMakerStatus;
   interestLevel?: InterestLevel;
   visitNote?: string | null;
   nextStep?: FollowUpNextStep;
@@ -83,15 +80,6 @@ function buildVisitStatusKeyboard() {
   ]);
 }
 
-function buildDecisionMakerKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('Decision Maker', 'revisit:decision_maker:decision_maker')],
-    [Markup.button.callback('Not Decision Maker', 'revisit:decision_maker:not_decision_maker')],
-    [Markup.button.callback('Influencer', 'revisit:decision_maker:influencer')],
-    [Markup.button.callback('Unknown', 'revisit:decision_maker:unknown')],
-  ]);
-}
-
 function buildInterestLevelKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('Interested', 'revisit:interest:interested')],
@@ -123,21 +111,6 @@ function mapVisitStatus(action: string): VisitStatus | null {
       return 'Not Headquarter';
     case 'office_is_empty':
       return 'Office Is Empty';
-    default:
-      return null;
-  }
-}
-
-function mapDecisionMakerStatus(action: string): DecisionMakerStatus | null {
-  switch (action) {
-    case 'decision_maker':
-      return 'Decision Maker';
-    case 'not_decision_maker':
-      return 'Not Decision Maker';
-    case 'influencer':
-      return 'Influencer';
-    case 'unknown':
-      return 'Unknown';
     default:
       return null;
   }
@@ -236,13 +209,12 @@ function buildPreviewMessage(state: RevisitState): string {
     `Report Card ID: ${valueOrFallback(state.company?.company_code)}`,
     `Main contact: ${valueOrFallback(state.mainContact?.contact_name)}`,
     `Visit status: ${valueOrFallback(state.visitStatus)}`,
-    `Decision maker status: ${valueOrFallback(state.decisionMakerStatus)}`,
     `Interest level: ${valueOrFallback(state.interestLevel)}`,
     `Visit notes: ${valueOrFallback(state.visitNote)}`,
     `Next step: ${valueOrFallback(state.nextStep)}`,
     `Next action date: ${valueOrFallback(state.nextActionDate)}`,
     `Next action time: ${valueOrFallback(state.nextActionTime)}`,
-    `Reminder: ${state.nextStep && state.nextStep !== 'No next action' && state.nextActionDate ? 'Will create or update' : 'Not created'}`,
+    `Reminder: ${state.nextStep && state.nextStep !== 'No next action' && state.nextActionDate ? 'Will create' : 'Not created'}`,
   ].join('\n');
 }
 
@@ -277,12 +249,6 @@ async function askVisitStatus(ctx: Context, state: RevisitState): Promise<void> 
   state.step = 'visit_status';
   setState(ctx, state);
   await ctx.reply('Visit status?', buildVisitStatusKeyboard());
-}
-
-async function askDecisionMakerStatus(ctx: Context, state: RevisitState): Promise<void> {
-  state.step = 'decision_maker_status';
-  setState(ctx, state);
-  await ctx.reply('Decision maker status?', buildDecisionMakerKeyboard());
 }
 
 async function askInterestLevel(ctx: Context, state: RevisitState): Promise<void> {
@@ -340,7 +306,7 @@ async function startRevisitForCompany(ctx: Context, company: CompanyRow): Promis
 }
 
 function validateRequiredForSave(state: RevisitState): string | null {
-  if (!state.company || !state.visitStatus || !state.decisionMakerStatus || !state.interestLevel || !state.nextStep) {
+  if (!state.company || !state.visitStatus || !state.interestLevel || !state.nextStep) {
     return 'Revisit is missing required fields.';
   }
 
@@ -362,11 +328,11 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
   }
 
   const company = state.company as CompanyRow;
-  const fieldVisit = await createFieldVisit({
+  await createFieldVisit({
     company_id: company.id,
     contact_id: state.mainContact?.id ?? null,
     visit_date: toDateOnly(new Date()),
-    decision_maker_status: state.decisionMakerStatus ?? null,
+    decision_maker_status: null,
     visit_status: state.visitStatus ?? null,
     interest_level: state.interestLevel ?? null,
     next_step: mapNextStepToFieldVisitStep(state.nextStep ?? null),
@@ -385,7 +351,7 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
 
   let reminderResult = 'Not created';
   if (state.nextStep && state.nextStep !== 'No next action' && state.nextActionDate) {
-    await createOrUpdateCompanyReminder({
+    await createReminder({
       company_id: company.id,
       contact_id: state.mainContact?.id ?? null,
       reminder_type: 'follow_up',
@@ -394,7 +360,7 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
       due_time: state.nextActionTime ?? null,
       created_by: ctx.from?.username || ctx.from?.id?.toString() || null,
     });
-    reminderResult = 'Created or updated';
+    reminderResult = 'Created';
   }
 
   await ctx.reply(
@@ -403,7 +369,6 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
       '',
       `Company: ${company.company_name}`,
       `Report Card ID: ${valueOrFallback(company.company_code)}`,
-      `Field visit ID: ${fieldVisit.id}`,
       `Reminder: ${reminderResult}`,
     ].join('\n')
   );
@@ -443,20 +408,6 @@ export function registerExistingCompanyRevisitWorkflow(bot: Telegraf): void {
     }
 
     state.visitStatus = visitStatus;
-    await askDecisionMakerStatus(ctx, state);
-  });
-
-  bot.action(/^revisit:decision_maker:([a-z_]+)$/, async (ctx) => {
-    await ctx.answerCbQuery().catch(() => undefined);
-    const state = getState(ctx);
-    const decisionMakerStatus = mapDecisionMakerStatus((ctx.match as RegExpMatchArray | undefined)?.[1] ?? '');
-    if (!state || !decisionMakerStatus) {
-      await ctx.reply('Could not record decision maker status. Please start again.');
-      clearState(ctx);
-      return;
-    }
-
-    state.decisionMakerStatus = decisionMakerStatus;
     await askInterestLevel(ctx, state);
   });
 

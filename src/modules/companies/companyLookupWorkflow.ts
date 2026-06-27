@@ -41,6 +41,11 @@ function pickOpenReminder(reminders: ReminderRow[]): ReminderRow | null {
   return reminders.find((reminder) => reminder.status === 'Open') ?? null;
 }
 
+function reminderDisplayStatus(reminder: ReminderRow): string {
+  const today = new Date().toISOString().slice(0, 10);
+  return reminder.due_date < today ? 'Overdue' : 'Open';
+}
+
 function formatOpenReminder(reminder: ReminderRow | null): string[] {
   if (!reminder) {
     return ['Open reminder:', 'Not available'];
@@ -50,7 +55,7 @@ function formatOpenReminder(reminder: ReminderRow | null): string[] {
     'Open reminder:',
     `Next step: ${reminder.action}`,
     `Due date: ${reminder.due_time ? `${reminder.due_date} ${reminder.due_time}` : reminder.due_date}`,
-    `Status: ${reminder.status}`,
+    `Status: ${reminderDisplayStatus(reminder)}`,
   ];
 }
 
