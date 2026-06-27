@@ -1,14 +1,25 @@
-import { Context, Telegraf } from 'telegraf';
+import { Context, Markup, Telegraf } from 'telegraf';
+import { showCommandCenter } from '../../bot/commandCenter';
 import { getSessionKey } from '../../bot/session';
-import { CompanyContactRow, CompanyRow, FieldVisitRow, ReminderRow } from '../../types/mazaya';
+import { CompanyContactRow, CompanyRow, FieldVisitRow, FollowUpRow, ReminderRow } from '../../types/mazaya';
 import { getMainContactForCompany } from '../contacts/contactService';
 import { listFieldVisitsByCompany } from '../fieldVisits/fieldVisitService';
-import { listRemindersByCompany } from '../reminders/reminderService';
 import { listLatestFollowUpsByCompany } from '../followUps/followUpService';
-import { findCompaniesByName, getCompanyByCode, getCompanyById } from './companyService';
+import { listRemindersByCompany } from '../reminders/reminderService';
+import {
+  findCompaniesByName,
+  getCompanyByCode,
+  getCompanyById,
+  listCompaniesPage,
+  listRecentCompanies,
+} from './companyService';
+
+type CompanyLookupMode = 'lookup_choices' | 'search_prompt' | 'search_choices' | 'recent' | 'all';
 
 interface CompanyLookupState {
+  mode: CompanyLookupMode;
   companyIds: string[];
+  allOffset?: number;
 }
 
 const MAX_CHOICE_RESULTS = 10;
@@ -39,7 +50,7 @@ function formatOpenReminder(reminder: ReminderRow | null): string[] {
   ];
 }
 
-function formatLatestFollowUps(followUps: Awaited<ReturnType<typeof listLatestFollowUpsByCompany>>): string[] {
+function formatLatestFollowUps(followUps: FollowUpRow[]): string[] {
   if (followUps.length === 0) {
     return ['Latest follow-ups:', 'Not available'];
   }
@@ -61,7 +72,7 @@ function formatCompanyReportCard(
   mainContact: CompanyContactRow | null,
   latestVisit: FieldVisitRow | null,
   reminder: ReminderRow | null,
-  followUps: Awaited<ReturnType<typeof listLatestFollowUpsByCompany>>
+  followUps: FollowUpRow[]
 ): string {
   return [
     'Company Report Card',
@@ -96,16 +107,15 @@ async function showCompanyReportCard(ctx: Context, company: CompanyRow): Promise
   await ctx.reply(formatCompanyReportCard(company, mainContact, fieldVisits[0] ?? null, pickOpenReminder(reminders), followUps));
 }
 
-async function showCompanyChoices(ctx: Context, companies: CompanyRow[]): Promise<void> {
+async function showCompanyChoices(ctx: Context, companies: CompanyRow[], mode: CompanyLookupMode): Promise<void> {
   const choices = companies.slice(0, MAX_CHOICE_RESULTS);
   lookupSessions.set(getLookupKey(ctx), {
+    mode,
     companyIds: choices.map((company) => company.id),
   });
 
   const extraCount = companies.length - choices.length;
-  const lines = choices.map(
-    (company, index) => `${index + 1}. ${company.company_name} - ${valueOrFallback(company.company_code)}`
-  );
+  const lines = choices.map((company, index) => `${index + 1}. ${company.company_name} - ${valueOrFallback(company.company_code)}`);
 
   await ctx.reply(
     [
@@ -148,13 +158,136 @@ async function handleCompanyLookup(ctx: Context, query: string): Promise<void> {
     return;
   }
 
-  await showCompanyChoices(ctx, companies);
+  await showCompanyChoices(ctx, companies, 'lookup_choices');
+}
+
+async function showCompaniesRoom(ctx: Context): Promise<void> {
+  await ctx.reply(
+    'Companies Database\n\nWhat do you want to do?',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('Search Company', 'companies:search')],
+      [Markup.button.callback('Recent Companies', 'companies:recent')],
+      [Markup.button.callback('All Companies', 'companies:all:0')],
+      [Markup.button.callback('Back to Command Center', 'companies:back_command')],
+    ])
+  );
+}
+
+function buildAllCompaniesKeyboard(offset: number, hasPrevious: boolean, hasNext: boolean) {
+  const rows = [];
+  const nav: Array<ReturnType<typeof Markup.button.callback>> = [];
+
+  if (hasPrevious) {
+    nav.push(Markup.button.callback('Previous Page', `companies:all:${Math.max(0, offset - MAX_CHOICE_RESULTS)}`));
+  }
+
+  if (hasNext) {
+    nav.push(Markup.button.callback('Next Page', `companies:all:${offset + MAX_CHOICE_RESULTS}`));
+  }
+
+  if (nav.length > 0) {
+    rows.push(nav);
+  }
+
+  rows.push([Markup.button.callback('Back to Companies', 'companies:back')]);
+  return Markup.inlineKeyboard(rows);
+}
+
+async function showRecentCompanies(ctx: Context): Promise<void> {
+  const companies = await listRecentCompanies(MAX_CHOICE_RESULTS);
+  if (companies.length === 0) {
+    lookupSessions.delete(getLookupKey(ctx));
+    await ctx.reply('No companies found yet.');
+    return;
+  }
+
+  const contacts = await Promise.all(companies.map((company) => getMainContactForCompany(company.id)));
+  lookupSessions.set(getLookupKey(ctx), { mode: 'recent', companyIds: companies.map((company) => company.id) });
+
+  const lines = companies.flatMap((company, index) => [
+    `${index + 1}. ${company.company_name}`,
+    `   Report Card ID: ${valueOrFallback(company.company_code)}`,
+    `   Main contact: ${valueOrFallback(contacts[index]?.contact_name)}`,
+    '',
+  ]);
+
+  await ctx.reply(['Recent Companies', '', ...lines].join('\n').trim());
+}
+
+async function showAllCompaniesPage(ctx: Context, offset: number): Promise<void> {
+  const companies = await listCompaniesPage(offset, MAX_CHOICE_RESULTS + 1);
+  const visible = companies.slice(0, MAX_CHOICE_RESULTS);
+  const hasNext = companies.length > MAX_CHOICE_RESULTS;
+
+  if (visible.length === 0 && offset > 0) {
+    await showAllCompaniesPage(ctx, Math.max(0, offset - MAX_CHOICE_RESULTS));
+    return;
+  }
+
+  if (visible.length === 0) {
+    lookupSessions.delete(getLookupKey(ctx));
+    await ctx.reply('No companies found yet.');
+    return;
+  }
+
+  lookupSessions.set(getLookupKey(ctx), {
+    mode: 'all',
+    companyIds: visible.map((company) => company.id),
+    allOffset: offset,
+  });
+
+  const lines = visible.flatMap((company, index) => [
+    `${index + 1}. ${company.company_name}`,
+    `   Report Card ID: ${valueOrFallback(company.company_code)}`,
+    '',
+  ]);
+
+  await ctx.reply(
+    ['All Companies', '', ...lines].join('\n').trim(),
+    buildAllCompaniesKeyboard(offset, offset > 0, hasNext)
+  );
 }
 
 export function registerCompanyLookupWorkflow(bot: Telegraf): void {
   bot.command('company', async (ctx) => {
     const query = ctx.message.text.replace(/^\/company(?:@\w+)?\s*/i, '');
     await handleCompanyLookup(ctx, query);
+  });
+
+  bot.command('companies', async (ctx) => {
+    await showCompaniesRoom(ctx);
+  });
+
+  bot.action('cc:companies_database', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showCompaniesRoom(ctx);
+  });
+
+  bot.action('companies:search', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    lookupSessions.set(getLookupKey(ctx), { mode: 'search_prompt', companyIds: [] });
+    await ctx.reply('Type the company name or Report Card ID to search.');
+  });
+
+  bot.action('companies:recent', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showRecentCompanies(ctx);
+  });
+
+  bot.action(/^companies:all:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    const offset = Number.parseInt((ctx.match as RegExpMatchArray | undefined)?.[1] ?? '0', 10);
+    await showAllCompaniesPage(ctx, Number.isFinite(offset) ? offset : 0);
+  });
+
+  bot.action('companies:back', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showCompaniesRoom(ctx);
+  });
+
+  bot.action('companies:back_command', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showCommandCenter(ctx);
   });
 }
 
@@ -169,19 +302,37 @@ export async function handleCompanyLookupText(ctx: Context): Promise<boolean> {
     return false;
   }
 
-  const choice = Number.parseInt(message.text.trim(), 10);
+  const text = message.text.trim();
+  if (state.mode === 'search_prompt') {
+    const companies = await lookupCompanies(text);
+    if (companies.length === 0) {
+      await ctx.reply('No company found. Please check the Report Card ID or company name.');
+      return true;
+    }
+
+    if (companies.length === 1) {
+      lookupSessions.delete(getLookupKey(ctx));
+      await showCompanyReportCard(ctx, companies[0]);
+      return true;
+    }
+
+    await showCompanyChoices(ctx, companies, 'search_choices');
+    return true;
+  }
+
+  const choice = Number.parseInt(text, 10);
   if (!Number.isInteger(choice) || choice < 1 || choice > state.companyIds.length) {
     await ctx.reply('Please reply with one of the listed numbers.');
     return true;
   }
 
-  lookupSessions.delete(getLookupKey(ctx));
   const company = await getCompanyById(state.companyIds[choice - 1]);
   if (!company) {
     await ctx.reply('That company is no longer available. Please search again.');
     return true;
   }
 
+  lookupSessions.delete(getLookupKey(ctx));
   await showCompanyReportCard(ctx, company);
   return true;
 }

@@ -111,12 +111,9 @@ function buildMenuKeyboard() {
   return Markup.inlineKeyboard([
     [
       Markup.button.callback('New Company Visit', 'field_visit:new'),
-      Markup.button.callback('Revisit Existing Company', 'field_visit:revisit_existing'),
+      Markup.button.callback('Existing Company Revisit', 'field_visit:revisit_existing'),
     ],
-    [
-      Markup.button.callback('Quick Field Note', 'field_visit:quick_note'),
-      Markup.button.callback('Back to Command Center', 'field_visit:back'),
-    ],
+    [Markup.button.callback('Back to Command Center', 'field_visit:back')],
   ]);
 }
 
@@ -641,7 +638,7 @@ async function handleSaveConfirm(ctx: Context) {
 }
 
 export async function showFieldVisitMenu(ctx: Context): Promise<void> {
-  await ctx.reply('Field Visit\n\nWhat do you want to log?', buildMenuKeyboard());
+  await ctx.reply('Field Visits\n\nWhat do you want to do?', buildMenuKeyboard());
 }
 
 export function registerFieldVisitWorkflow(bot: Telegraf): void {
@@ -662,7 +659,7 @@ export function registerFieldVisitWorkflow(bot: Telegraf): void {
 
   bot.action('field_visit:revisit_existing', async (ctx) => {
     await ctx.answerCbQuery().catch(() => undefined);
-    await ctx.reply('Revisit Existing Company is coming in next phase.');
+    await ctx.reply('Existing company revisit flow is coming next.');
     await showFieldVisitMenu(ctx);
   });
 

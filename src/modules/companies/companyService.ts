@@ -159,6 +159,34 @@ export async function findCompaniesByName(companyName: string): Promise<CompanyR
   return (data ?? []) as CompanyRow[];
 }
 
+export async function listRecentCompanies(limit = 10): Promise<CompanyRow[]> {
+  const { data, error } = await supabase
+    .from('companies')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throwSupabaseError('listRecentCompanies', error);
+  }
+
+  return (data ?? []) as CompanyRow[];
+}
+
+export async function listCompaniesPage(offset: number, limit: number): Promise<CompanyRow[]> {
+  const { data, error } = await supabase
+    .from('companies')
+    .select('*')
+    .order('company_name', { ascending: true })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    throwSupabaseError('listCompaniesPage', error);
+  }
+
+  return (data ?? []) as CompanyRow[];
+}
+
 export async function getCompanyByCode(companyCode: string): Promise<CompanyRow | null> {
   const { data, error } = await supabase.from('companies').select('*').eq('company_code', companyCode).maybeSingle();
 

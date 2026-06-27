@@ -1,12 +1,8 @@
 export type CommandCenterAction =
   | 'field_visit'
-  | 'follow_ups'
+  | 'companies_database'
   | 'reminders'
   | 'tasks'
-  | 'quick_note'
-  | 'start_my_day'
-  | 'end_of_day_review'
-  | 'pipeline'
   | 'report_room'
   | 'draft_message_later';
 

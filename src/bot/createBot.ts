@@ -7,16 +7,13 @@ import { handleFieldVisitText, registerFieldVisitWorkflow } from '../modules/fie
 import { handleCompanyLookupText, registerCompanyLookupWorkflow } from '../modules/companies/companyLookupWorkflow';
 import { handleFollowUpLoggingText, registerFollowUpLoggingWorkflow } from '../modules/followUps/followUpLoggingWorkflow';
 import { registerReminderListWorkflow } from '../modules/reminders/reminderListWorkflow';
+import { registerPlaceholderRoomsWorkflow } from './placeholderRoomsWorkflow';
 
 const commandCenterActions = new Set<CommandCenterAction>([
   'field_visit',
-  'follow_ups',
+  'companies_database',
   'reminders',
   'tasks',
-  'quick_note',
-  'start_my_day',
-  'end_of_day_review',
-  'pipeline',
   'report_room',
   'draft_message_later',
 ]);
@@ -42,10 +39,18 @@ export function createBot(): Telegraf {
     await showCommandCenter(ctx);
   });
 
+  bot.command('menu', async (ctx) => {
+    const chatId = ctx.chat?.id ?? 'unknown-chat';
+    const userId = ctx.from?.id ?? 'unknown-user';
+    startCommandCenterSession(getSessionKey(chatId, userId));
+    await showCommandCenter(ctx);
+  });
+
   registerFieldVisitWorkflow(bot);
   registerCompanyLookupWorkflow(bot);
   registerFollowUpLoggingWorkflow(bot);
   registerReminderListWorkflow(bot);
+  registerPlaceholderRoomsWorkflow(bot);
 
   bot.action(/^cc:([a-z_]+)$/, async (ctx) => {
     const action = ctx.match[1] as CommandCenterAction;

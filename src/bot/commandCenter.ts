@@ -2,16 +2,12 @@ import { Context, Markup } from 'telegraf';
 import { CommandCenterAction, CommandCenterButton } from '../types/mazaya';
 
 const commandCenterButtons: CommandCenterButton[] = [
-  { label: 'Field Visit', action: 'field_visit' },
-  { label: 'Follow-Ups', action: 'follow_ups' },
-  { label: 'Reminders', action: 'reminders' },
+  { label: 'Field Visits', action: 'field_visit' },
+  { label: 'Companies Database', action: 'companies_database' },
+  { label: 'Reminders / Follow-Ups', action: 'reminders' },
+  { label: 'Reports', action: 'report_room' },
+  { label: 'Drafts', action: 'draft_message_later' },
   { label: 'Tasks', action: 'tasks' },
-  { label: 'Quick Note', action: 'quick_note' },
-  { label: 'Start My Day', action: 'start_my_day' },
-  { label: 'End-of-Day Review', action: 'end_of_day_review' },
-  { label: 'Pipeline', action: 'pipeline' },
-  { label: 'Report Room', action: 'report_room' },
-  { label: 'Draft Message Later', action: 'draft_message_later' },
 ];
 
 function actionLabel(action: CommandCenterAction): string {
@@ -22,24 +18,16 @@ function actionLabel(action: CommandCenterAction): string {
 export function commandCenterKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('Field Visit', 'cc:field_visit'),
-      Markup.button.callback('Follow-Ups', 'cc:follow_ups'),
+      Markup.button.callback('Field Visits', 'cc:field_visit'),
+      Markup.button.callback('Companies Database', 'cc:companies_database'),
     ],
     [
-      Markup.button.callback('Reminders', 'cc:reminders'),
+      Markup.button.callback('Reminders / Follow-Ups', 'cc:reminders'),
+      Markup.button.callback('Reports', 'cc:report_room'),
+    ],
+    [
+      Markup.button.callback('Drafts', 'cc:draft_message_later'),
       Markup.button.callback('Tasks', 'cc:tasks'),
-    ],
-    [
-      Markup.button.callback('Quick Note', 'cc:quick_note'),
-      Markup.button.callback('Start My Day', 'cc:start_my_day'),
-    ],
-    [
-      Markup.button.callback('End-of-Day Review', 'cc:end_of_day_review'),
-      Markup.button.callback('Pipeline', 'cc:pipeline'),
-    ],
-    [
-      Markup.button.callback('Report Room', 'cc:report_room'),
-      Markup.button.callback('Draft Message Later', 'cc:draft_message_later'),
     ],
   ]);
 }
@@ -47,9 +35,9 @@ export function commandCenterKeyboard() {
 export async function showCommandCenter(ctx: Context): Promise<void> {
   await ctx.reply(
     [
-      'Mazaya v2 Command Center',
+      'Mazaya Command Center',
       '',
-      'Choose what you want to open.',
+      'What do you want to do?',
     ].join('\n'),
     commandCenterKeyboard()
   );

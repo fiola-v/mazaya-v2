@@ -1,6 +1,6 @@
-import { Context, Telegraf } from 'telegraf';
+import { Context, Markup, Telegraf } from 'telegraf';
+import { showCommandCenter } from '../../bot/commandCenter';
 import { getSessionKey } from '../../bot/session';
-import { addDays, toDateOnly } from '../../utils/dates';
 import { CompanyContactRow, CompanyRow, ReminderRow } from '../../types/mazaya';
 import { getCompanyById } from '../companies/companyService';
 import { getCompanyContactById, getMainContactForCompany } from '../contacts/contactService';
@@ -20,9 +20,41 @@ interface ReminderListState {
 }
 
 const latestLists = new Map<string, ReminderListState>();
+const BUSINESS_TIME_ZONE = 'Asia/Dubai';
 
 function getChatKey(ctx: Context): string {
   return getSessionKey(ctx.chat?.id ?? 'unknown-chat', 'reminder-list');
+}
+
+function getBusinessDateParts(date: Date): { year: number; month: number; day: number; weekday: number } {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+  }).formatToParts(date);
+
+  const year = Number.parseInt(parts.find((part) => part.type === 'year')?.value ?? '0', 10);
+  const month = Number.parseInt(parts.find((part) => part.type === 'month')?.value ?? '0', 10);
+  const day = Number.parseInt(parts.find((part) => part.type === 'day')?.value ?? '0', 10);
+  const weekdayName = parts.find((part) => part.type === 'weekday')?.value ?? 'Mon';
+  const weekday = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[weekdayName] ?? 1;
+
+  return { year, month, day, weekday };
+}
+
+function toBusinessDateOnly(date: Date): string {
+  const { year, month, day } = getBusinessDateParts(date);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function getCurrentWeekEndDate(today: Date): string {
+  const { weekday } = getBusinessDateParts(today);
+  const daysUntilSunday = 7 - weekday;
+  const { year, month, day } = getBusinessDateParts(today);
+  const next = new Date(Date.UTC(year, month - 1, day + daysUntilSunday, 12, 0, 0));
+  return toBusinessDateOnly(next);
 }
 
 function valueOrFallback(value: string | null | undefined): string {
@@ -35,14 +67,6 @@ function formatDue(reminder: ReminderRow): string {
 
 function reminderStatus(reminder: ReminderRow, today: string): string {
   return reminder.due_date < today ? 'Overdue' : 'Open';
-}
-
-function getCurrentWeekEndDate(today: Date): string {
-  const endOfWeek = new Date(today);
-  const dayOfWeek = endOfWeek.getDay();
-  const daysUntilSunday = (7 - dayOfWeek) % 7;
-  endOfWeek.setDate(endOfWeek.getDate() + daysUntilSunday);
-  return toDateOnly(endOfWeek);
 }
 
 async function resolveReminderItem(reminder: ReminderRow): Promise<ReminderListItem | null> {
@@ -68,18 +92,18 @@ async function resolveReminderItem(reminder: ReminderRow): Promise<ReminderListI
 
 async function getReminderList(range: ReminderListRange): Promise<ReminderListItem[]> {
   const now = new Date();
-  const today = toDateOnly(now);
+  const today = toBusinessDateOnly(now);
   const reminders =
     range === 'today'
       ? await listOpenRemindersDueOnOrBefore(today)
-      : await listOpenRemindersDueBetween(toDateOnly(addDays(now, 1)), getCurrentWeekEndDate(now));
+      : await listOpenRemindersDueBetween(today, getCurrentWeekEndDate(now));
 
   const items = await Promise.all(reminders.map((reminder) => resolveReminderItem(reminder)));
   return items.filter((item): item is ReminderListItem => item !== null);
 }
 
 function formatReminderList(title: string, items: ReminderListItem[]): string {
-  const today = toDateOnly(new Date());
+  const today = toBusinessDateOnly(new Date());
   const lines = items.flatMap((item, index) => [
     `${index + 1}. ${item.company.company_name}`,
     `   Report Card ID: ${valueOrFallback(item.company.company_code)}`,
@@ -114,16 +138,100 @@ function parseRange(commandText: string): ReminderListRange | null {
   return null;
 }
 
+async function showReminderRoom(ctx: Context): Promise<void> {
+  await ctx.reply(
+    'Reminders & Follow-Ups\n\nWhat do you want to do?',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('Today', 'reminders_room:today')],
+      [Markup.button.callback('This Week', 'reminders_room:week')],
+      [Markup.button.callback('Log Follow-Up', 'reminders_room:log')],
+      [Markup.button.callback('Done Reminder', 'reminders_room:done')],
+      [Markup.button.callback('Back to Command Center', 'reminders_room:back_command')],
+    ])
+  );
+}
+
+function todayCategoryKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('All', 'reminders_room:today:all')],
+    [Markup.button.callback('Follow-Up Reminders', 'reminders_room:today:followups')],
+    [Markup.button.callback('Back', 'reminders_room:back')],
+  ]);
+}
+
+function weekCategoryKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('All', 'reminders_room:week:all')],
+    [Markup.button.callback('Follow-Up Reminders', 'reminders_room:week:followups')],
+    [Markup.button.callback('Back', 'reminders_room:back')],
+  ]);
+}
+
 export function registerReminderListWorkflow(bot: Telegraf): void {
   bot.command(['reminders', 'followups'], async (ctx) => {
     const range = parseRange(ctx.message.text);
     if (!range) {
-      await ctx.reply('Usage:\n/reminders today\n/reminders week');
+      await showReminderRoom(ctx);
       return;
     }
 
     const title = range === 'today' ? "Today's Follow-Ups" : 'This Week Follow-Ups';
     await showReminderList(ctx, range, title);
+  });
+
+  bot.action('cc:reminders', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showReminderRoom(ctx);
+  });
+
+  bot.action('reminders_room:today', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await ctx.reply("Today's Follow-Ups\n\nChoose a category:", todayCategoryKeyboard());
+  });
+
+  bot.action('reminders_room:week', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await ctx.reply('This Week Follow-Ups\n\nChoose a category:', weekCategoryKeyboard());
+  });
+
+  bot.action('reminders_room:today:all', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showReminderList(ctx, 'today', "Today's Follow-Ups");
+  });
+
+  bot.action('reminders_room:today:followups', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showReminderList(ctx, 'today', "Today's Follow-Ups");
+  });
+
+  bot.action('reminders_room:week:all', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showReminderList(ctx, 'week', 'This Week Follow-Ups');
+  });
+
+  bot.action('reminders_room:week:followups', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showReminderList(ctx, 'week', 'This Week Follow-Ups');
+  });
+
+  bot.action('reminders_room:log', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await ctx.reply('Type /log RC-26-0002 to log a follow-up.');
+  });
+
+  bot.action('reminders_room:done', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await ctx.reply('Open Today or This Week first, then use /done 1.');
+  });
+
+  bot.action('reminders_room:back', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showReminderRoom(ctx);
+  });
+
+  bot.action('reminders_room:back_command', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => undefined);
+    await showCommandCenter(ctx);
   });
 
   bot.command('done', async (ctx) => {
