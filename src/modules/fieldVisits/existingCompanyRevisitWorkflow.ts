@@ -1,6 +1,7 @@
 import { Context, Markup, Telegraf } from 'telegraf';
 import { getSessionKey } from '../../bot/session';
 import { isDateOnly, toDateOnly } from '../../utils/dates';
+import { escapeHtml } from '../../utils/telegram';
 import {
   CompanyRow,
   CompanyContactRow,
@@ -206,26 +207,27 @@ function buildPreviewMessage(state: RevisitState): string {
   const reminderPreview =
     state.reminderPreview ??
     (state.nextStep && state.nextStep !== 'No next action' && state.nextActionDate ? 'Will create' : 'Not created');
+  const safe = (value: string | null | undefined): string => escapeHtml(valueOrFallback(value));
   return [
-    'Existing Company Revisit Preview',
+    '<b>Existing Company Revisit Preview</b>',
     '',
-    'Company',
-    `Name: ${valueOrFallback(state.company?.company_name)}`,
-    `Report Card ID: ${valueOrFallback(state.company?.company_code)}`,
+    '<b>Company</b>',
+    `<b>Name:</b> ${safe(state.company?.company_name)}`,
+    `<b>Report Card ID:</b> ${safe(state.company?.company_code)}`,
     '',
-    'Contact',
-    `Main contact: ${valueOrFallback(state.mainContact?.contact_name)}`,
+    '<b>Contact</b>',
+    `<b>Main contact:</b> ${safe(state.mainContact?.contact_name)}`,
     '',
-    'Status',
-    `Visit status: ${valueOrFallback(state.visitStatus)}`,
-    `Interest level: ${valueOrFallback(state.interestLevel)}`,
+    '<b>Status</b>',
+    `<b>Visit status:</b> ${safe(state.visitStatus)}`,
+    `<b>Interest level:</b> ${safe(state.interestLevel)}`,
     '',
-    'Next action',
-    `Visit notes: ${valueOrFallback(state.visitNote)}`,
-    `Action: ${valueOrFallback(state.nextStep)}`,
-    `Date: ${valueOrFallback(state.nextActionDate)}`,
-    `Time: ${valueOrFallback(state.nextActionTime)}`,
-    `Reminder: ${reminderPreview}`,
+    '<b>Next action</b>',
+    `<b>Visit notes:</b> ${safe(state.visitNote)}`,
+    `<b>Action:</b> ${safe(state.nextStep)}`,
+    `<b>Date:</b> ${safe(state.nextActionDate)}`,
+    `<b>Time:</b> ${safe(state.nextActionTime)}`,
+    `<b>Reminder:</b> ${safe(reminderPreview)}`,
   ].join('\n');
 }
 
@@ -313,10 +315,13 @@ async function showPreview(ctx: Context, state: RevisitState): Promise<void> {
   setState(ctx, state);
   await ctx.reply(
     buildPreviewMessage(state),
-    Markup.inlineKeyboard([
-      [Markup.button.callback('Confirm', 'revisit:confirm')],
-      [Markup.button.callback('Cancel', 'revisit:cancel')],
-    ])
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('Confirm', 'revisit:confirm')],
+        [Markup.button.callback('Cancel', 'revisit:cancel')],
+      ]),
+    }
   );
 }
 
@@ -402,16 +407,18 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
   }
 
   const lastVisited = savedVisit.visit_date || savedVisit.created_at.slice(0, 10);
+  const safe = (value: string | null | undefined): string => escapeHtml(valueOrFallback(value));
 
   await ctx.reply(
     [
-      'Existing company revisit saved.',
+      '<b>Existing company revisit saved.</b>',
       '',
-      `Company: ${company.company_name}`,
-      `Report Card ID: ${valueOrFallback(company.company_code)}`,
-      `Last visited: ${lastVisited}`,
-      `Reminder: ${reminderResult}`,
-    ].join('\n')
+      `<b>Company:</b> ${safe(company.company_name)}`,
+      `<b>Report Card ID:</b> ${safe(company.company_code)}`,
+      `<b>Last visited:</b> ${safe(lastVisited)}`,
+      `<b>Reminder:</b> ${safe(reminderResult)}`,
+    ].join('\n'),
+    { parse_mode: 'HTML' }
   );
 }
 

@@ -2,7 +2,8 @@ import { Context, Markup, Telegraf } from 'telegraf';
 import { getSessionKey, clearSession } from '../../bot/session';
 import { showCommandCenter } from '../../bot/commandCenter';
 import { addDays, isDateOnly, toDateOnly } from '../../utils/dates';
-import { buildWhatsAppLink, digitsOnly } from '../../utils/phone';
+import { buildWhatsAppLink, normalizeWhatsAppDisplay } from '../../utils/phone';
+import { escapeHtml } from '../../utils/telegram';
 import { createCompanyWithReportCardId, generateNextReportCardId } from '../companies/companyService';
 import { createCompanyContact, setMainContact } from '../contacts/contactService';
 import { createFieldVisit } from './fieldVisitService';
@@ -165,34 +166,35 @@ function buildDateKeyboard() {
 
 function buildPreviewMessage(state: NewCompanyVisitState): string {
   const infoSent = state.infoSent === true ? 'Yes' : 'No';
+  const safe = (value: string | null | undefined): string => escapeHtml(value || 'Not captured');
 
   return [
-    'New Company Visit Preview',
+    '<b>New Company Visit Preview</b>',
     '',
-    'Company',
-    `Name: ${state.companyName || 'Not captured'}`,
-    `Report Card ID: ${state.companyCode || 'Not captured'}`,
-    `Industry: ${state.industry || 'Not captured'}`,
+    '<b>Company</b>',
+    `<b>Name:</b> ${safe(state.companyName)}`,
+    `<b>Report Card ID:</b> ${safe(state.companyCode)}`,
+    `<b>Industry:</b> ${safe(state.industry)}`,
     '',
-    'Contact',
-    `Main contact: ${state.contactName || 'Not captured'}`,
-    `Role: ${state.contactRole || 'Not captured'}`,
-    `Phone: ${state.phone || 'Not captured'}`,
-    `WhatsApp: ${state.whatsapp || 'Not captured'}`,
-    `Email: ${state.email || 'Not captured'}`,
+    '<b>Contact</b>',
+    `<b>Main contact:</b> ${safe(state.contactName)}`,
+    `<b>Role:</b> ${safe(state.contactRole)}`,
+    `<b>Phone:</b> ${safe(state.phone)}`,
+    `<b>WhatsApp:</b> ${safe(normalizeWhatsAppDisplay(state.whatsapp, state.phone))}`,
+    `<b>Email:</b> ${safe(state.email)}`,
     '',
-    'Status',
-    `Visit status: ${state.visitStatus || 'Not captured'}`,
-    `Interest level: ${state.interestLevel || 'Not captured'}`,
-    `Blocker: ${state.blocker || 'Not captured'}`,
-    `Info sent: ${infoSent}`,
+    '<b>Status</b>',
+    `<b>Visit status:</b> ${safe(state.visitStatus)}`,
+    `<b>Interest level:</b> ${safe(state.interestLevel)}`,
+    `<b>Blocker:</b> ${safe(state.blocker)}`,
+    `<b>Deck/info sent:</b> ${safe(infoSent)}`,
     '',
-    'Next action',
-    `Next action: ${state.nextAction || 'Not captured'}`,
-    `Date: ${state.nextActionDate || 'Not captured'}`,
+    '<b>Next action</b>',
+    `<b>Action:</b> ${safe(state.nextAction)}`,
+    `<b>Date:</b> ${safe(state.nextActionDate)}`,
     '',
-    'Notes',
-    `Visit note: ${state.visitNote || 'Not captured'}`,
+    '<b>Notes</b>',
+    `<b>Visit note:</b> ${safe(state.visitNote)}`,
   ].join('\n');
 }
 
@@ -314,11 +316,14 @@ async function showPreview(ctx: Context, state: NewCompanyVisitState) {
 
   await ctx.reply(
     buildPreviewMessage(state),
-    Markup.inlineKeyboard([
-      [Markup.button.callback('Confirm', 'field_visit:new:confirm')],
-      [Markup.button.callback('Edit', 'field_visit:new:edit')],
-      [Markup.button.callback('Cancel', 'field_visit:new:cancel')],
-    ])
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('Confirm', 'field_visit:new:confirm')],
+        [Markup.button.callback('Edit', 'field_visit:new:edit')],
+        [Markup.button.callback('Cancel', 'field_visit:new:cancel')],
+      ]),
+    }
   );
 }
 
@@ -592,17 +597,19 @@ async function handleSaveConfirm(ctx: Context) {
     state.status = 'saved';
     setState(ctx, state);
     await stripPreviewButtons(ctx);
+    const safe = (value: string | null | undefined): string => escapeHtml(value || 'Not captured');
     await ctx.reply(
       [
-        'New Company Visit saved.',
+        '<b>New Company Visit saved.</b>',
         '',
-        `Company: ${state.companyName || 'Not captured'}`,
-        `Report Card ID: ${state.companyCode || 'Not captured'}`,
-        `Contact: ${state.contactName || 'Not captured'}`,
-        `Next action: ${state.nextAction || 'Not captured'}`,
-        `Next action date: ${state.nextActionDate || 'Not captured'}`,
-        `Reminder: ${saved.reminderId ? 'Created' : 'Not created'}`,
-      ].join('\n')
+        `<b>Company:</b> ${safe(state.companyName)}`,
+        `<b>Report Card ID:</b> ${safe(state.companyCode)}`,
+        `<b>Contact:</b> ${safe(state.contactName)}`,
+        `<b>Next action:</b> ${safe(state.nextAction)}`,
+        `<b>Next action date:</b> ${safe(state.nextActionDate)}`,
+        `<b>Reminder:</b> ${saved.reminderId ? 'Created' : 'Not created'}`,
+      ].join('\n'),
+      { parse_mode: 'HTML' }
     );
     await showPostSaveSyncPrompt(ctx, state);
   } catch (error) {
@@ -693,7 +700,7 @@ export function registerFieldVisitWorkflow(bot: Telegraf): void {
       return;
     }
 
-    state.whatsapp = buildWhatsAppLink(state.phone) ?? digitsOnly(state.phone);
+    state.whatsapp = buildWhatsAppLink(state.phone) ?? state.phone;
     await askEmail(ctx, state);
   });
 

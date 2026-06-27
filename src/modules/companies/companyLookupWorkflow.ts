@@ -2,6 +2,8 @@ import { Context, Markup, Telegraf } from 'telegraf';
 import { showCommandCenter } from '../../bot/commandCenter';
 import { getSessionKey } from '../../bot/session';
 import { CompanyContactRow, CompanyRow, FieldVisitRow, FollowUpRow, ReminderRow } from '../../types/mazaya';
+import { normalizeWhatsAppDisplay } from '../../utils/phone';
+import { escapeHtml } from '../../utils/telegram';
 import { getMainContactForCompany } from '../contacts/contactService';
 import { listFieldVisitsByCompany } from '../fieldVisits/fieldVisitService';
 import { listLatestFollowUpsByCompany } from '../followUps/followUpService';
@@ -35,6 +37,10 @@ export function clearCompanyLookupState(ctx: Context): void {
 
 function valueOrFallback(value: string | null | undefined): string {
   return value || 'Not captured';
+}
+
+function safeValue(value: string | null | undefined): string {
+  return escapeHtml(valueOrFallback(value));
 }
 
 const BUSINESS_TIME_ZONE = 'Asia/Dubai';
@@ -83,16 +89,16 @@ function pickOpenReminders(reminders: ReminderRow[]): ReminderRow[] {
 
 function formatOpenReminders(reminders: ReminderRow[]): string[] {
   if (reminders.length === 0) {
-    return ['Open reminders', 'Not available'];
+    return ['<b>Open reminders</b>', 'Not available'];
   }
 
   return [
-    'Open reminders',
+    '<b>Open reminders</b>',
     '',
     ...reminders.flatMap((reminder, index) => [
-      `${index + 1}. ${reminder.action}`,
-      `   Due date: ${reminder.due_time ? `${reminder.due_date} ${reminder.due_time}` : reminder.due_date}`,
-      `   Status: ${reminderDisplayStatus(reminder)}`,
+      `${index + 1}. ${safeValue(reminder.action)}`,
+      `   <b>Due date:</b> ${safeValue(reminder.due_time ? `${reminder.due_date} ${reminder.due_time}` : reminder.due_date)}`,
+      `   <b>Status:</b> ${safeValue(reminderDisplayStatus(reminder))}`,
       '',
     ]),
   ];
@@ -100,16 +106,16 @@ function formatOpenReminders(reminders: ReminderRow[]): string[] {
 
 function formatLatestFollowUps(followUps: FollowUpRow[]): string[] {
   if (followUps.length === 0) {
-    return ['Latest follow-ups', 'Not available'];
+    return ['<b>Latest follow-ups</b>', 'Not available'];
   }
 
   return [
-    'Latest follow-ups',
+    '<b>Latest follow-ups</b>',
     '',
     ...followUps.flatMap((followUp, index) => [
-      `${index + 1}. ${followUp.follow_up_date} - ${valueOrFallback(followUp.follow_up_result)}`,
-      `   Next step: ${valueOrFallback(followUp.next_step)}`,
-      `   Note: ${valueOrFallback(followUp.follow_up_note)}`,
+      `${index + 1}. ${safeValue(followUp.follow_up_date)} - ${safeValue(followUp.follow_up_result)}`,
+      `   <b>Next step:</b> ${safeValue(followUp.next_step)}`,
+      `   <b>Note:</b> ${safeValue(followUp.follow_up_note)}`,
       '',
     ]),
   ];
@@ -135,28 +141,30 @@ function formatCompanyReportCard(
   followUps: FollowUpRow[]
 ): string {
   return [
-    'Company Report Card',
+    '<b>Company Report Card</b>',
     '',
-    'Company',
-    `Name: ${company.company_name}`,
-    `Report Card ID: ${valueOrFallback(company.company_code)}`,
-    `Industry: ${valueOrFallback(company.industry)}`,
+    '<b>Company</b>',
+    `<b>Name:</b> ${safeValue(company.company_name)}`,
+    `<b>Report Card ID:</b> ${safeValue(company.company_code)}`,
+    `<b>Industry:</b> ${safeValue(company.industry)}`,
     '',
-    'Contact',
-    `Main contact: ${valueOrFallback(mainContact?.contact_name)}`,
-    `Role: ${valueOrFallback(mainContact?.role_title)}`,
-    `Phone: ${valueOrFallback(mainContact?.phone)}`,
-    `WhatsApp: ${valueOrFallback(mainContact?.whatsapp)}`,
-    `Email: ${valueOrFallback(mainContact?.email)}`,
+    '<b>Contact</b>',
+    `<b>Main contact:</b> ${safeValue(mainContact?.contact_name)}`,
+    `<b>Role:</b> ${safeValue(mainContact?.role_title)}`,
+    `<b>Phone:</b> ${safeValue(mainContact?.phone)}`,
+    `<b>WhatsApp:</b> ${safeValue(normalizeWhatsAppDisplay(mainContact?.whatsapp, mainContact?.phone))}`,
+    `<b>Email:</b> ${safeValue(mainContact?.email)}`,
     '',
-    'Status',
-    `Latest visit status: ${valueOrFallback(latestVisit?.visit_status ?? company.visit_status)}`,
-    `Last visited: ${lastVisitedDate(latestVisit)}`,
-    `Interest level: ${valueOrFallback(latestVisit?.interest_level ?? company.interest_level)}`,
+    '<b>Status</b>',
+    `<b>Latest visit status:</b> ${safeValue(latestVisit?.visit_status ?? company.visit_status)}`,
+    `<b>Last visited:</b> ${safeValue(lastVisitedDate(latestVisit))}`,
+    `<b>Interest level:</b> ${safeValue(latestVisit?.interest_level ?? company.interest_level)}`,
+    `<b>Blocker:</b> ${safeValue(latestVisit?.blocker)}`,
+    `<b>Deck/info sent:</b> ${safeValue(latestVisit?.info_sent === null ? null : latestVisit?.info_sent ? 'Yes' : 'No')}`,
     '',
-    'Next action',
-    `Action: ${valueOrFallback(company.current_next_action ?? latestVisit?.next_step)}`,
-    `Date: ${valueOrFallback(company.next_action_date ?? latestVisit?.next_action_date)}`,
+    '<b>Next action</b>',
+    `<b>Action:</b> ${safeValue(company.current_next_action ?? latestVisit?.next_step)}`,
+    `<b>Date:</b> ${safeValue(company.next_action_date ?? latestVisit?.next_action_date)}`,
     '',
     ...formatOpenReminders(openReminders),
     '',
@@ -173,7 +181,8 @@ async function showCompanyReportCard(ctx: Context, company: CompanyRow): Promise
   ]);
 
   await ctx.reply(
-    formatCompanyReportCard(company, mainContact, fieldVisits[0] ?? null, pickOpenReminders(reminders), followUps)
+    formatCompanyReportCard(company, mainContact, fieldVisits[0] ?? null, pickOpenReminders(reminders), followUps),
+    { parse_mode: 'HTML' }
   );
 }
 

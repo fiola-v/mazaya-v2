@@ -2,6 +2,7 @@ import { Context, Markup, Telegraf } from 'telegraf';
 import { showCommandCenter } from '../../bot/commandCenter';
 import { getSessionKey } from '../../bot/session';
 import { CompanyContactRow, CompanyRow, ReminderRow } from '../../types/mazaya';
+import { escapeHtml } from '../../utils/telegram';
 import { getCompanyByCode } from '../companies/companyService';
 import { getCompanyById } from '../companies/companyService';
 import { getCompanyContactById, getMainContactForCompany } from '../contacts/contactService';
@@ -191,16 +192,17 @@ function parseReportCardId(argument: string): string | null {
 
 function formatCompanyReminderList(company: CompanyRow, items: ReminderListItem[]): string {
   const today = toBusinessDateOnly(new Date());
+  const safe = (value: string | null | undefined): string => escapeHtml(valueOrFallback(value));
   const lines = items.flatMap((item, index) => [
-    `${index + 1}. ${item.reminder.action}`,
-    `   Due date: ${formatDue(item.reminder)}`,
-    `   Status: ${formatActiveReminderStatus(item.reminder, today)}`,
+    `${index + 1}. ${safe(item.reminder.action)}`,
+    `   <b>Due date:</b> ${safe(formatDue(item.reminder))}`,
+    `   <b>Status:</b> ${safe(formatActiveReminderStatus(item.reminder, today))}`,
     '',
   ]);
 
   return [
-    `Reminders for ${company.company_name}`,
-    `Report Card ID: ${valueOrFallback(company.company_code)}`,
+    `<b>Reminders for ${safe(company.company_name)}</b>`,
+    `<b>Report Card ID:</b> ${safe(company.company_code)}`,
     '',
     ...lines,
   ]
@@ -233,7 +235,7 @@ async function showCompanyReminderList(ctx: Context, reportCardId: string): Prom
   const itemsResolved = await Promise.all(activeReminders.map((reminder) => resolveReminderItem(reminder)));
   const items = itemsResolved.filter((item): item is ReminderListItem => item !== null);
   latestLists.set(getChatKey(ctx), { items });
-  await ctx.reply(formatCompanyReminderList(company, items));
+  await ctx.reply(formatCompanyReminderList(company, items), { parse_mode: 'HTML' });
 }
 
 async function showReminderRoom(ctx: Context): Promise<void> {
