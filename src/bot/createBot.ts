@@ -12,6 +12,7 @@ import { handleCompanyLookupText, registerCompanyLookupWorkflow } from '../modul
 import { handleFollowUpLoggingText, registerFollowUpLoggingWorkflow } from '../modules/followUps/followUpLoggingWorkflow';
 import { handleDraftsText, registerDraftsWorkflow } from '../modules/drafts/draftsWorkflow';
 import { registerReminderListWorkflow } from '../modules/reminders/reminderListWorkflow';
+import { registerReportsRoomWorkflow, showReportsRoom } from '../modules/reports/reportsRoomWorkflow';
 import { registerPlaceholderRoomsWorkflow } from './placeholderRoomsWorkflow';
 
 const commandCenterActions = new Set<CommandCenterAction>([
@@ -57,11 +58,17 @@ export function createBot(): Telegraf {
   registerFollowUpLoggingWorkflow(bot);
   registerDraftsWorkflow(bot);
   registerReminderListWorkflow(bot);
+  registerReportsRoomWorkflow(bot);
   registerPlaceholderRoomsWorkflow(bot);
 
   bot.action(/^cc:([a-z_]+)$/, async (ctx) => {
     const action = ctx.match[1] as CommandCenterAction;
     await ctx.answerCbQuery().catch(() => undefined);
+
+    if (action === 'report_room') {
+      await showReportsRoom(ctx);
+      return;
+    }
 
     if (!commandCenterActions.has(action)) {
       await ctx.reply('Unknown Command Center action.');

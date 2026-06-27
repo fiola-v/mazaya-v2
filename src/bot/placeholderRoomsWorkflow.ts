@@ -1,22 +1,6 @@
 import { Context, Markup, Telegraf } from 'telegraf';
 import { showCommandCenter } from './commandCenter';
 
-async function showReportsRoom(ctx: Context): Promise<void> {
-  await ctx.reply(
-    [
-      'Reports Room',
-      '',
-      'This room will be used to review, approve, and sync saved activity to reporting.',
-    ].join('\n'),
-    Markup.inlineKeyboard([
-      [Markup.button.callback("Today's Review", 'reports:placeholder')],
-      [Markup.button.callback('Unsynced Items', 'reports:placeholder')],
-      [Markup.button.callback('Sync Approved to Sheets', 'reports:placeholder')],
-      [Markup.button.callback('Back to Command Center', 'reports:back_command')],
-    ])
-  );
-}
-
 async function showTasksRoom(ctx: Context): Promise<void> {
   await ctx.reply(
     'Tasks Room',
@@ -30,17 +14,8 @@ async function showTasksRoom(ctx: Context): Promise<void> {
 }
 
 export function registerPlaceholderRoomsWorkflow(bot: Telegraf): void {
-  bot.command('reports', async (ctx) => {
-    await showReportsRoom(ctx);
-  });
-
   bot.command('tasks', async (ctx) => {
     await showTasksRoom(ctx);
-  });
-
-  bot.action('cc:report_room', async (ctx) => {
-    await ctx.answerCbQuery().catch(() => undefined);
-    await showReportsRoom(ctx);
   });
 
   bot.action('cc:tasks', async (ctx) => {
@@ -48,19 +23,9 @@ export function registerPlaceholderRoomsWorkflow(bot: Telegraf): void {
     await showTasksRoom(ctx);
   });
 
-  bot.action('reports:placeholder', async (ctx) => {
-    await ctx.answerCbQuery().catch(() => undefined);
-    await ctx.reply('Report review and Google Sheets sync are coming in the next reporting milestone.');
-  });
-
   bot.action('tasks:placeholder', async (ctx) => {
     await ctx.answerCbQuery().catch(() => undefined);
     await ctx.reply('Tasks are coming later.');
-  });
-
-  bot.action('reports:back_command', async (ctx) => {
-    await ctx.answerCbQuery().catch(() => undefined);
-    await showCommandCenter(ctx);
   });
 
   bot.action('tasks:back_command', async (ctx) => {
