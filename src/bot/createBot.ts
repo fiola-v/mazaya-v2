@@ -6,6 +6,7 @@ import { CommandCenterAction } from '../types/mazaya';
 import { handleFieldVisitText, registerFieldVisitWorkflow } from '../modules/fieldVisits/newCompanyVisitWorkflow';
 import { handleCompanyLookupText, registerCompanyLookupWorkflow } from '../modules/companies/companyLookupWorkflow';
 import { handleFollowUpLoggingText, registerFollowUpLoggingWorkflow } from '../modules/followUps/followUpLoggingWorkflow';
+import { registerReminderListWorkflow } from '../modules/reminders/reminderListWorkflow';
 
 const commandCenterActions = new Set<CommandCenterAction>([
   'field_visit',
@@ -44,6 +45,7 @@ export function createBot(): Telegraf {
   registerFieldVisitWorkflow(bot);
   registerCompanyLookupWorkflow(bot);
   registerFollowUpLoggingWorkflow(bot);
+  registerReminderListWorkflow(bot);
 
   bot.action(/^cc:([a-z_]+)$/, async (ctx) => {
     const action = ctx.match[1] as CommandCenterAction;

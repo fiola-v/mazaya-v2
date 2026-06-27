@@ -69,6 +69,16 @@ export async function getMainContactForCompany(companyId: string): Promise<Compa
   return (data as CompanyContactRow | null) ?? null;
 }
 
+export async function getCompanyContactById(contactId: string): Promise<CompanyContactRow | null> {
+  const { data, error } = await supabase.from('company_contacts').select('*').eq('id', contactId).maybeSingle();
+
+  if (error) {
+    throwSupabaseError('getCompanyContactById', error);
+  }
+
+  return (data as CompanyContactRow | null) ?? null;
+}
+
 export async function setMainContact(companyId: string, contactId: string): Promise<CompanyContactRow> {
   const { data: contact, error: contactError } = await supabase
     .from('company_contacts')

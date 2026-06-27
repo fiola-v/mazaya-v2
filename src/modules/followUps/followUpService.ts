@@ -32,3 +32,19 @@ export async function createFollowUp(input: FollowUpCreateInput): Promise<Follow
 
   return data as FollowUpRow;
 }
+
+export async function listLatestFollowUpsByCompany(companyId: string, limit = 3): Promise<FollowUpRow[]> {
+  const { data, error } = await supabase
+    .from('follow_ups')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('follow_up_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throwSupabaseError('listLatestFollowUpsByCompany', error);
+  }
+
+  return (data ?? []) as FollowUpRow[];
+}

@@ -4,6 +4,7 @@ import { CompanyContactRow, CompanyRow, FieldVisitRow, ReminderRow } from '../..
 import { getMainContactForCompany } from '../contacts/contactService';
 import { listFieldVisitsByCompany } from '../fieldVisits/fieldVisitService';
 import { listRemindersByCompany } from '../reminders/reminderService';
+import { listLatestFollowUpsByCompany } from '../followUps/followUpService';
 import { findCompaniesByName, getCompanyByCode, getCompanyById } from './companyService';
 
 interface CompanyLookupState {
@@ -21,23 +22,46 @@ function valueOrFallback(value: string | null | undefined): string {
   return value || 'Not captured';
 }
 
-function pickReminder(reminders: ReminderRow[]): ReminderRow | null {
-  return reminders.find((reminder) => reminder.status === 'Open') ?? reminders[0] ?? null;
+function pickOpenReminder(reminders: ReminderRow[]): ReminderRow | null {
+  return reminders.find((reminder) => reminder.status === 'Open') ?? null;
 }
 
-function formatReminderStatus(reminder: ReminderRow | null): string {
+function formatOpenReminder(reminder: ReminderRow | null): string[] {
   if (!reminder) {
-    return 'Not available';
+    return ['Open reminder:', 'Not available'];
   }
 
-  return `${reminder.status} - ${reminder.action} on ${reminder.due_date}`;
+  return [
+    'Open reminder:',
+    `Next step: ${reminder.action}`,
+    `Due date: ${reminder.due_time ? `${reminder.due_date} ${reminder.due_time}` : reminder.due_date}`,
+    `Status: ${reminder.status}`,
+  ];
+}
+
+function formatLatestFollowUps(followUps: Awaited<ReturnType<typeof listLatestFollowUpsByCompany>>): string[] {
+  if (followUps.length === 0) {
+    return ['Latest follow-ups:', 'Not available'];
+  }
+
+  return [
+    'Latest follow-ups:',
+    '',
+    ...followUps.flatMap((followUp, index) => [
+      `${index + 1}. ${followUp.follow_up_date} - ${valueOrFallback(followUp.follow_up_result)}`,
+      `   Next step: ${valueOrFallback(followUp.next_step)}`,
+      `   Note: ${valueOrFallback(followUp.follow_up_note)}`,
+      '',
+    ]),
+  ];
 }
 
 function formatCompanyReportCard(
   company: CompanyRow,
   mainContact: CompanyContactRow | null,
   latestVisit: FieldVisitRow | null,
-  reminder: ReminderRow | null
+  reminder: ReminderRow | null,
+  followUps: Awaited<ReturnType<typeof listLatestFollowUpsByCompany>>
 ): string {
   return [
     'Company Report Card',
@@ -54,18 +78,22 @@ function formatCompanyReportCard(
     `Interest level: ${valueOrFallback(latestVisit?.interest_level ?? company.interest_level)}`,
     `Next action: ${valueOrFallback(company.current_next_action ?? latestVisit?.next_step)}`,
     `Next action date: ${valueOrFallback(company.next_action_date ?? latestVisit?.next_action_date)}`,
-    `Reminder status: ${formatReminderStatus(reminder)}`,
+    '',
+    ...formatOpenReminder(reminder),
+    '',
+    ...formatLatestFollowUps(followUps),
   ].join('\n');
 }
 
 async function showCompanyReportCard(ctx: Context, company: CompanyRow): Promise<void> {
-  const [mainContact, fieldVisits, reminders] = await Promise.all([
+  const [mainContact, fieldVisits, reminders, followUps] = await Promise.all([
     getMainContactForCompany(company.id),
     listFieldVisitsByCompany(company.id),
     listRemindersByCompany(company.id),
+    listLatestFollowUpsByCompany(company.id, 3),
   ]);
 
-  await ctx.reply(formatCompanyReportCard(company, mainContact, fieldVisits[0] ?? null, pickReminder(reminders)));
+  await ctx.reply(formatCompanyReportCard(company, mainContact, fieldVisits[0] ?? null, pickOpenReminder(reminders), followUps));
 }
 
 async function showCompanyChoices(ctx: Context, companies: CompanyRow[]): Promise<void> {

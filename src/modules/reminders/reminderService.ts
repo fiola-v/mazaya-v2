@@ -25,6 +25,7 @@ export interface ReminderPendingActionInput {
   due_date: string;
   due_time?: string | null;
   created_by?: string | null;
+  exclude_reminder_id?: string | null;
 }
 
 function throwSupabaseError(operation: string, error: { message: string; details?: string | null; hint?: string | null }) {
@@ -61,6 +62,39 @@ export async function listOpenReminders(): Promise<ReminderRow[]> {
   return (data ?? []) as ReminderRow[];
 }
 
+export async function listOpenRemindersDueOnOrBefore(dueDate: string): Promise<ReminderRow[]> {
+  const { data, error } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('status', 'Open')
+    .lte('due_date', dueDate)
+    .order('due_date', { ascending: true })
+    .order('due_time', { ascending: true, nullsFirst: false });
+
+  if (error) {
+    throwSupabaseError('listOpenRemindersDueOnOrBefore', error);
+  }
+
+  return (data ?? []) as ReminderRow[];
+}
+
+export async function listOpenRemindersDueBetween(startDate: string, endDate: string): Promise<ReminderRow[]> {
+  const { data, error } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('status', 'Open')
+    .gte('due_date', startDate)
+    .lte('due_date', endDate)
+    .order('due_date', { ascending: true })
+    .order('due_time', { ascending: true, nullsFirst: false });
+
+  if (error) {
+    throwSupabaseError('listOpenRemindersDueBetween', error);
+  }
+
+  return (data ?? []) as ReminderRow[];
+}
+
 export async function listRemindersByCompany(companyId: string): Promise<ReminderRow[]> {
   const { data, error } = await supabase
     .from('reminders')
@@ -78,11 +112,13 @@ export async function listRemindersByCompany(companyId: string): Promise<Reminde
 }
 
 export async function createOrUpdateCompanyReminder(input: ReminderPendingActionInput): Promise<ReminderRow> {
+  const { exclude_reminder_id: _excludeReminderId, ...reminderInput } = input;
   const reminders = await listRemindersByCompany(input.company_id);
-  const openReminder = reminders.find((reminder) => reminder.status === 'Open') ?? null;
+  const openReminder =
+    reminders.find((reminder) => reminder.status === 'Open' && reminder.id !== _excludeReminderId) ?? null;
 
   if (!openReminder) {
-    return createReminder(input);
+    return createReminder(reminderInput);
   }
 
   const { data, error } = await supabase

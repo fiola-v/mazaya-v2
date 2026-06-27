@@ -1,11 +1,11 @@
 import { Context, Markup, Telegraf } from 'telegraf';
 import { getSessionKey } from '../../bot/session';
-import { isDateOnly, toDateOnly } from '../../utils/dates';
+import { addDays, isDateOnly, toDateOnly } from '../../utils/dates';
 import { CompanyContactRow, CompanyRow, FollowUpNextStep, FollowUpResult } from '../../types/mazaya';
 import { findCompaniesByName, getCompanyByCode, getCompanyById } from '../companies/companyService';
 import { getMainContactForCompany } from '../contacts/contactService';
 import { createFollowUp } from './followUpService';
-import { createOrUpdateCompanyReminder } from '../reminders/reminderService';
+import { completeReminder, createOrUpdateCompanyReminder } from '../reminders/reminderService';
 
 type FollowUpStep =
   | 'company_query'
@@ -26,6 +26,7 @@ interface FollowUpLoggingState {
   nextStep?: FollowUpNextStep;
   nextActionDate?: string | null;
   nextActionTime?: string | null;
+  completingReminderId?: string | null;
 }
 
 const sessions = new Map<string, FollowUpLoggingState>();
@@ -125,6 +126,15 @@ function mapNextStep(action: string): FollowUpNextStep | null {
 
 function parseDateTime(value: string): { date: string; time: string | null } | null {
   const text = value.trim();
+  const normalizedText = text.toLowerCase();
+  if (normalizedText === 'today') {
+    return { date: toDateOnly(new Date()), time: null };
+  }
+
+  if (normalizedText === 'tomorrow') {
+    return { date: toDateOnly(addDays(new Date(), 1)), time: null };
+  }
+
   const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?$/);
   if (!match || !isDateOnly(match[1])) {
     return null;
@@ -246,6 +256,20 @@ async function findCompanies(query: string): Promise<CompanyRow[]> {
   return findCompaniesByName(query);
 }
 
+export async function startFollowUpLoggingForCompany(
+  ctx: Context,
+  company: CompanyRow,
+  options?: { completingReminderId?: string | null }
+): Promise<void> {
+  const state: FollowUpLoggingState = {
+    step: 'result',
+    company,
+    mainContact: await getMainContactForCompany(company.id),
+    completingReminderId: options?.completingReminderId ?? null,
+  };
+  await askResult(ctx, state);
+}
+
 async function setCompany(ctx: Context, state: FollowUpLoggingState, company: CompanyRow): Promise<void> {
   state.company = company;
   state.mainContact = await getMainContactForCompany(company.id);
@@ -272,24 +296,12 @@ async function saveFollowUp(ctx: Context, state: FollowUpLoggingState): Promise<
     throw new Error('Follow-up is missing required fields.');
   }
 
-  let reminderId: string | null = null;
-  if (state.nextStep !== 'No next action' && state.nextActionDate) {
-    const reminder = await createOrUpdateCompanyReminder({
-      company_id: state.company.id,
-      contact_id: state.mainContact?.id ?? null,
-      reminder_type: 'follow_up',
-      action: reminderAction(state.nextStep),
-      due_date: state.nextActionDate,
-      due_time: state.nextActionTime ?? null,
-      created_by: ctx.from?.username || ctx.from?.id?.toString() || null,
-    });
-    reminderId = reminder.id;
-  }
+  const completedReminderId = state.completingReminderId ?? null;
 
   await createFollowUp({
     company_id: state.company.id,
     contact_id: state.mainContact?.id ?? null,
-    reminder_id: reminderId,
+    reminder_id: completedReminderId,
     follow_up_date: toDateOnly(new Date()),
     follow_up_result: state.result,
     next_step: state.nextStep,
@@ -299,6 +311,25 @@ async function saveFollowUp(ctx: Context, state: FollowUpLoggingState): Promise<
     created_by: ctx.from?.username || ctx.from?.id?.toString() || null,
   });
 
+  if (completedReminderId) {
+    await completeReminder(completedReminderId);
+  }
+
+  let nextReminderId: string | null = null;
+  if (state.nextStep !== 'No next action' && state.nextActionDate) {
+    const reminder = await createOrUpdateCompanyReminder({
+      company_id: state.company.id,
+      contact_id: state.mainContact?.id ?? null,
+      reminder_type: 'follow_up',
+      action: reminderAction(state.nextStep),
+      due_date: state.nextActionDate,
+      due_time: state.nextActionTime ?? null,
+      created_by: ctx.from?.username || ctx.from?.id?.toString() || null,
+      exclude_reminder_id: completedReminderId,
+    });
+    nextReminderId = reminder.id;
+  }
+
   await ctx.reply(
     [
       'Follow-up saved.',
@@ -307,8 +338,11 @@ async function saveFollowUp(ctx: Context, state: FollowUpLoggingState): Promise<
       `Report Card ID: ${valueOrFallback(state.company.company_code)}`,
       `Result: ${state.result}`,
       `Next step: ${state.nextStep}`,
-      `Reminder: ${reminderId ? 'Created or updated' : 'Not created'}`,
-    ].join('\n')
+      completedReminderId ? 'Completed reminder: Done' : null,
+      `New reminder: ${nextReminderId ? 'Created or updated' : 'Not created'}`,
+    ]
+      .filter((line): line is string => line !== null)
+      .join('\n')
   );
 }
 
@@ -326,7 +360,7 @@ export function registerFollowUpLoggingWorkflow(bot: Telegraf): void {
       return;
     }
 
-    await setCompany(ctx, { step: 'company_query' }, company);
+    await startFollowUpLoggingForCompany(ctx, company);
   });
 
   bot.action('cc:follow_ups', async (ctx) => {
