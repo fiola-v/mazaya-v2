@@ -2,10 +2,11 @@ import { Context, Markup, Telegraf } from 'telegraf';
 import { showCommandCenter } from '../../bot/commandCenter';
 import { getSessionKey } from '../../bot/session';
 import { CompanyContactRow, CompanyRow, ReminderRow } from '../../types/mazaya';
+import { getCompanyByCode } from '../companies/companyService';
 import { getCompanyById } from '../companies/companyService';
 import { getCompanyContactById, getMainContactForCompany } from '../contacts/contactService';
 import { startFollowUpLoggingForCompany } from '../followUps/followUpLoggingWorkflow';
-import { listOpenRemindersDueBetween, listOpenRemindersDueOnOrBefore } from './reminderService';
+import { listOpenRemindersDueBetween, listOpenRemindersDueOnOrBefore, listRemindersByCompany } from './reminderService';
 
 type ReminderListRange = 'today' | 'week';
 
@@ -67,6 +68,43 @@ function formatDue(reminder: ReminderRow): string {
 
 function reminderStatus(reminder: ReminderRow, today: string): string {
   return reminder.due_date < today ? 'Overdue' : 'Open';
+}
+
+function isActiveReminderStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'open' || normalized === 'pending';
+}
+
+function formatActiveReminderStatus(reminder: ReminderRow, today: string): string {
+  if (reminder.due_date < today) {
+    return 'Overdue';
+  }
+
+  const normalized = reminder.status.trim().toLowerCase();
+  if (normalized === 'pending') {
+    return 'Pending';
+  }
+
+  return 'Open';
+}
+
+function sortActiveReminders(reminders: ReminderRow[]): ReminderRow[] {
+  const today = toBusinessDateOnly(new Date());
+  return [...reminders].sort((a, b) => {
+    const aOverdueRank = a.due_date < today ? 0 : 1;
+    const bOverdueRank = b.due_date < today ? 0 : 1;
+    if (aOverdueRank !== bOverdueRank) {
+      return aOverdueRank - bOverdueRank;
+    }
+
+    if (a.due_date !== b.due_date) {
+      return a.due_date.localeCompare(b.due_date);
+    }
+
+    const aCreatedAt = a.created_at ?? '';
+    const bCreatedAt = b.created_at ?? '';
+    return aCreatedAt.localeCompare(bCreatedAt);
+  });
 }
 
 async function resolveReminderItem(reminder: ReminderRow): Promise<ReminderListItem | null> {
@@ -138,6 +176,66 @@ function parseRange(commandText: string): ReminderListRange | null {
   return null;
 }
 
+function parseCommandArgument(commandText: string): string | null {
+  const [, rawArgument] = commandText.trim().split(/\s+/, 2);
+  return rawArgument?.trim() || null;
+}
+
+function parseReportCardId(argument: string): string | null {
+  if (!/^RC-\d{2}-\d{4,}$/i.test(argument)) {
+    return null;
+  }
+
+  return argument.toUpperCase();
+}
+
+function formatCompanyReminderList(company: CompanyRow, items: ReminderListItem[]): string {
+  const today = toBusinessDateOnly(new Date());
+  const lines = items.flatMap((item, index) => [
+    `${index + 1}. ${item.reminder.action}`,
+    `   Due date: ${formatDue(item.reminder)}`,
+    `   Status: ${formatActiveReminderStatus(item.reminder, today)}`,
+    '',
+  ]);
+
+  return [
+    `Reminders for ${company.company_name}`,
+    `Report Card ID: ${valueOrFallback(company.company_code)}`,
+    '',
+    ...lines,
+  ]
+    .join('\n')
+    .trim();
+}
+
+async function showCompanyReminderList(ctx: Context, reportCardId: string): Promise<void> {
+  const company = await getCompanyByCode(reportCardId);
+  if (!company) {
+    latestLists.delete(getChatKey(ctx));
+    await ctx.reply('No company found for that Report Card ID. Please check it and try again.');
+    return;
+  }
+
+  const reminders = await listRemindersByCompany(company.id);
+  const activeReminders = sortActiveReminders(reminders.filter((reminder) => isActiveReminderStatus(reminder.status)));
+
+  if (activeReminders.length === 0) {
+    latestLists.delete(getChatKey(ctx));
+    await ctx.reply(
+      [
+        `No open reminders found for ${company.company_name}.`,
+        `Report Card ID: ${valueOrFallback(company.company_code)}`,
+      ].join('\n')
+    );
+    return;
+  }
+
+  const itemsResolved = await Promise.all(activeReminders.map((reminder) => resolveReminderItem(reminder)));
+  const items = itemsResolved.filter((item): item is ReminderListItem => item !== null);
+  latestLists.set(getChatKey(ctx), { items });
+  await ctx.reply(formatCompanyReminderList(company, items));
+}
+
 async function showReminderRoom(ctx: Context): Promise<void> {
   await ctx.reply(
     'Reminders & Follow-Ups\n\nWhat do you want to do?',
@@ -168,9 +266,20 @@ function weekCategoryKeyboard() {
 }
 
 export function registerReminderListWorkflow(bot: Telegraf): void {
-  bot.command(['reminders', 'followups'], async (ctx) => {
-    const range = parseRange(ctx.message.text);
+  bot.command(['reminders', 'followups', 'reminder'], async (ctx) => {
+    const commandText = ctx.message.text;
+    const isReminderAlias = /^\/reminder(?:@\w+)?(?:\s|$)/i.test(commandText);
+    const range = parseRange(commandText);
     if (!range) {
+      const argument = parseCommandArgument(commandText);
+      if (argument) {
+        const reportCardId = parseReportCardId(argument);
+        if (reportCardId && (isReminderAlias || /^\/reminders(?:@\w+)?(?:\s|$)/i.test(commandText))) {
+          await showCompanyReminderList(ctx, reportCardId);
+          return;
+        }
+      }
+
       await showReminderRoom(ctx);
       return;
     }

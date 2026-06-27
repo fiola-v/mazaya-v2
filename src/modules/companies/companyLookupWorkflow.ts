@@ -37,25 +37,64 @@ function valueOrFallback(value: string | null | undefined): string {
   return value || 'Not captured';
 }
 
-function pickOpenReminder(reminders: ReminderRow[]): ReminderRow | null {
-  return reminders.find((reminder) => reminder.status === 'Open') ?? null;
+const BUSINESS_TIME_ZONE = 'Asia/Dubai';
+
+function getBusinessDateOnly(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
+  return `${year}-${month}-${day}`;
 }
 
 function reminderDisplayStatus(reminder: ReminderRow): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getBusinessDateOnly(new Date());
   return reminder.due_date < today ? 'Overdue' : 'Open';
 }
 
-function formatOpenReminder(reminder: ReminderRow | null): string[] {
-  if (!reminder) {
-    return ['Open reminder:', 'Not available'];
+function sortOpenReminders(reminders: ReminderRow[]): ReminderRow[] {
+  const today = getBusinessDateOnly(new Date());
+  return [...reminders].sort((a, b) => {
+    const aOverdueRank = a.due_date < today ? 0 : 1;
+    const bOverdueRank = b.due_date < today ? 0 : 1;
+    if (aOverdueRank !== bOverdueRank) {
+      return aOverdueRank - bOverdueRank;
+    }
+
+    if (a.due_date !== b.due_date) {
+      return a.due_date.localeCompare(b.due_date);
+    }
+
+    const aCreatedAt = a.created_at ?? '';
+    const bCreatedAt = b.created_at ?? '';
+    return aCreatedAt.localeCompare(bCreatedAt);
+  });
+}
+
+function pickOpenReminders(reminders: ReminderRow[]): ReminderRow[] {
+  return sortOpenReminders(reminders.filter((reminder) => reminder.status === 'Open'));
+}
+
+function formatOpenReminders(reminders: ReminderRow[]): string[] {
+  if (reminders.length === 0) {
+    return ['Open reminders:', 'Not available'];
   }
 
   return [
-    'Open reminder:',
-    `Next step: ${reminder.action}`,
-    `Due date: ${reminder.due_time ? `${reminder.due_date} ${reminder.due_time}` : reminder.due_date}`,
-    `Status: ${reminderDisplayStatus(reminder)}`,
+    'Open reminders:',
+    '',
+    ...reminders.flatMap((reminder, index) => [
+      `${index + 1}. ${reminder.action}`,
+      `   Due date: ${reminder.due_time ? `${reminder.due_date} ${reminder.due_time}` : reminder.due_date}`,
+      `   Status: ${reminderDisplayStatus(reminder)}`,
+      '',
+    ]),
   ];
 }
 
@@ -80,7 +119,7 @@ function formatCompanyReportCard(
   company: CompanyRow,
   mainContact: CompanyContactRow | null,
   latestVisit: FieldVisitRow | null,
-  reminder: ReminderRow | null,
+  openReminders: ReminderRow[],
   followUps: FollowUpRow[]
 ): string {
   return [
@@ -99,7 +138,7 @@ function formatCompanyReportCard(
     `Next action: ${valueOrFallback(company.current_next_action ?? latestVisit?.next_step)}`,
     `Next action date: ${valueOrFallback(company.next_action_date ?? latestVisit?.next_action_date)}`,
     '',
-    ...formatOpenReminder(reminder),
+    ...formatOpenReminders(openReminders),
     '',
     ...formatLatestFollowUps(followUps),
   ].join('\n');
@@ -113,7 +152,9 @@ async function showCompanyReportCard(ctx: Context, company: CompanyRow): Promise
     listLatestFollowUpsByCompany(company.id, 3),
   ]);
 
-  await ctx.reply(formatCompanyReportCard(company, mainContact, fieldVisits[0] ?? null, pickOpenReminder(reminders), followUps));
+  await ctx.reply(
+    formatCompanyReportCard(company, mainContact, fieldVisits[0] ?? null, pickOpenReminders(reminders), followUps)
+  );
 }
 
 async function showCompanyChoices(ctx: Context, companies: CompanyRow[], mode: CompanyLookupMode): Promise<void> {
