@@ -28,8 +28,29 @@ export interface ReminderPendingActionInput {
   exclude_reminder_id?: string | null;
 }
 
+export interface ReminderDuplicateMatchInput {
+  company_id: string;
+  action: string;
+  due_date: string;
+  due_time?: string | null;
+}
+
 function throwSupabaseError(operation: string, error: { message: string; details?: string | null; hint?: string | null }) {
   throw new Error(`${operation} failed: ${error.message}${error.details ? ` | ${error.details}` : ''}${error.hint ? ` | ${error.hint}` : ''}`);
+}
+
+function normalizeReminderAction(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizeReminderTime(value: string | null | undefined): string | null {
+  const normalized = value?.trim() ?? '';
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isActiveReminderStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'open' || normalized === 'pending';
 }
 
 export async function createReminder(input: ReminderCreateInput): Promise<ReminderRow> {
@@ -109,6 +130,49 @@ export async function listRemindersByCompany(companyId: string): Promise<Reminde
   }
 
   return (data ?? []) as ReminderRow[];
+}
+
+export async function getReminderById(reminderId: string): Promise<ReminderRow | null> {
+  const { data, error } = await supabase.from('reminders').select('*').eq('id', reminderId).maybeSingle();
+
+  if (error) {
+    throwSupabaseError('getReminderById', error);
+  }
+
+  return (data as ReminderRow | null) ?? null;
+}
+
+export async function findMatchingActiveCompanyReminder(input: ReminderDuplicateMatchInput): Promise<ReminderRow | null> {
+  const reminders = await listRemindersByCompany(input.company_id);
+  const normalizedAction = normalizeReminderAction(input.action);
+  const normalizedDueTime = normalizeReminderTime(input.due_time);
+
+  return (
+    reminders.find((reminder) => {
+      if (!isActiveReminderStatus(reminder.status)) {
+        return false;
+      }
+
+      if (normalizeReminderAction(reminder.action) !== normalizedAction) {
+        return false;
+      }
+
+      if (reminder.due_date !== input.due_date) {
+        return false;
+      }
+
+      const reminderDueTime = normalizeReminderTime(reminder.due_time);
+      if (normalizedDueTime && reminderDueTime && reminderDueTime !== normalizedDueTime) {
+        return false;
+      }
+
+      if (normalizedDueTime && !reminderDueTime) {
+        return false;
+      }
+
+      return true;
+    }) ?? null
+  );
 }
 
 export async function createOrUpdateCompanyReminder(input: ReminderPendingActionInput): Promise<ReminderRow> {

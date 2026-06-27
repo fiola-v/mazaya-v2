@@ -6,7 +6,7 @@ import { getCompanyByCode } from '../companies/companyService';
 import { getCompanyById } from '../companies/companyService';
 import { getCompanyContactById, getMainContactForCompany } from '../contacts/contactService';
 import { startFollowUpLoggingForCompany } from '../followUps/followUpLoggingWorkflow';
-import { listOpenRemindersDueBetween, listOpenRemindersDueOnOrBefore, listRemindersByCompany } from './reminderService';
+import { getReminderById, listOpenRemindersDueBetween, listOpenRemindersDueOnOrBefore, listRemindersByCompany } from './reminderService';
 
 type ReminderListRange = 'today' | 'week';
 
@@ -347,17 +347,30 @@ export function registerReminderListWorkflow(bot: Telegraf): void {
     const [, rawChoice] = ctx.message.text.trim().split(/\s+/, 2);
     const state = latestLists.get(getChatKey(ctx));
     if (!state) {
-      await ctx.reply('No active reminder list. Run /reminders today or /reminders week first.');
+      await ctx.reply(
+        'No reminder list is active. Run /reminders today, /reminders week, or /reminders RC-26-0002 first.'
+      );
       return;
     }
 
     const choice = Number.parseInt(rawChoice ?? '', 10);
     if (!Number.isInteger(choice) || choice < 1 || choice > state.items.length) {
-      await ctx.reply('Please choose a valid number from the latest reminder list.');
+      await ctx.reply('Invalid reminder number. Please choose a number from the latest reminder list.');
       return;
     }
 
     const item = state.items[choice - 1];
+    const latestReminder = await getReminderById(item.reminder.id);
+    if (!latestReminder) {
+      await ctx.reply('That reminder is no longer available. Refresh the list and try again.');
+      return;
+    }
+
+    if (!isActiveReminderStatus(latestReminder.status)) {
+      await ctx.reply('That reminder is already completed.');
+      return;
+    }
+
     latestLists.delete(getChatKey(ctx));
     await ctx.reply(
       [

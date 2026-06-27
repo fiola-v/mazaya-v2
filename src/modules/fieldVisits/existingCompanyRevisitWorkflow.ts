@@ -12,7 +12,7 @@ import {
 import { findCompaniesByName, getCompanyByCode, getCompanyById, updateCompanyCurrentState } from '../companies/companyService';
 import { getMainContactForCompany } from '../contacts/contactService';
 import { createFieldVisit } from './fieldVisitService';
-import { createReminder } from '../reminders/reminderService';
+import { createReminder, findMatchingActiveCompanyReminder } from '../reminders/reminderService';
 import { clearCompanyLookupState } from '../companies/companyLookupWorkflow';
 
 type RevisitStep =
@@ -36,6 +36,7 @@ interface RevisitState {
   nextStep?: FollowUpNextStep;
   nextActionDate?: string | null;
   nextActionTime?: string | null;
+  reminderPreview?: 'Not created' | 'Will create' | 'Already open';
 }
 
 const sessions = new Map<string, RevisitState>();
@@ -202,6 +203,9 @@ function reminderPrompt(nextStep: FollowUpNextStep): string {
 }
 
 function buildPreviewMessage(state: RevisitState): string {
+  const reminderPreview =
+    state.reminderPreview ??
+    (state.nextStep && state.nextStep !== 'No next action' && state.nextActionDate ? 'Will create' : 'Not created');
   return [
     'Existing Company Revisit Preview',
     '',
@@ -214,8 +218,23 @@ function buildPreviewMessage(state: RevisitState): string {
     `Next step: ${valueOrFallback(state.nextStep)}`,
     `Next action date: ${valueOrFallback(state.nextActionDate)}`,
     `Next action time: ${valueOrFallback(state.nextActionTime)}`,
-    `Reminder: ${state.nextStep && state.nextStep !== 'No next action' && state.nextActionDate ? 'Will create' : 'Not created'}`,
+    `Reminder: ${reminderPreview}`,
   ].join('\n');
+}
+
+async function resolveReminderPreview(state: RevisitState): Promise<'Not created' | 'Will create' | 'Already open'> {
+  if (!state.company || !state.nextStep || state.nextStep === 'No next action' || !state.nextActionDate) {
+    return 'Not created';
+  }
+
+  const existingReminder = await findMatchingActiveCompanyReminder({
+    company_id: state.company.id,
+    action: state.nextStep,
+    due_date: state.nextActionDate,
+    due_time: state.nextActionTime ?? null,
+  });
+
+  return existingReminder ? 'Already open' : 'Will create';
 }
 
 async function askCompanyQuery(ctx: Context): Promise<void> {
@@ -282,6 +301,7 @@ async function askNextActionDateTime(ctx: Context, state: RevisitState): Promise
 }
 
 async function showPreview(ctx: Context, state: RevisitState): Promise<void> {
+  state.reminderPreview = await resolveReminderPreview(state);
   state.step = 'preview';
   setState(ctx, state);
   await ctx.reply(
@@ -351,6 +371,16 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
 
   let reminderResult = 'Not created';
   if (state.nextStep && state.nextStep !== 'No next action' && state.nextActionDate) {
+    const existingReminder = await findMatchingActiveCompanyReminder({
+      company_id: company.id,
+      action: state.nextStep,
+      due_date: state.nextActionDate,
+      due_time: state.nextActionTime ?? null,
+    });
+
+    if (existingReminder) {
+      reminderResult = 'Already open';
+    } else {
     await createReminder({
       company_id: company.id,
       contact_id: state.mainContact?.id ?? null,
@@ -360,7 +390,8 @@ async function saveRevisit(ctx: Context, state: RevisitState): Promise<void> {
       due_time: state.nextActionTime ?? null,
       created_by: ctx.from?.username || ctx.from?.id?.toString() || null,
     });
-    reminderResult = 'Created';
+      reminderResult = 'Created';
+    }
   }
 
   await ctx.reply(
